@@ -1,0 +1,14 @@
+Package: pwall
+Version: 1.0-0
+Maintainer: Leon
+Architecture: amd64
+Section: Graphics & Photography
+Depends: libgtk-3-0 (>= 3.18.9), xdg-utils (>=1.1.1), jhead
+Priority: optional
+Installed-Size: 274
+Description: browse your photos through a photo wall. 
+ It's a file browser adapted to photo context. 
+ It shows the folders of your pictures main directory in the left pane and a photowall in the right.
+ The photowall is a scrolling panel of square thumbnails giving a preview of each photo.
+ Loading and unloading of this scrolling panel is made dynamicaly, viewing page by viewing page like smartphones do.
+ It also allows you to have basics management of photos (change dates, copy a group of photos to another directory, delete...).

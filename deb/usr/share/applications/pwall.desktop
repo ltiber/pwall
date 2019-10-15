@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Encoding=UTF-8
+Name=pwall
+Comment=browse your photos through a photo wall. 
+Exec=pwall
+Icon=pwall
+Terminal=false
+Categories=Photos;

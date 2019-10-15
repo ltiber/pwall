@@ -1,0 +1,83 @@
+<html>
+<body>
+
+
+<h1>Help for Pwall App</h1>
+    <h2> What is Pwall App?</h2>
+<p>This is photo manager and navigator. It's a file browser adapted to photo context.
+    It shows the folders of your pictures main directory in the left pane and a photowall in the right.</p>
+    <p> The directories are descending sorted</p>
+    <p>
+        The photowall is a scrolling panel of square thumbnails giving a preview of each photo. 
+Loading and unloading of this scrolling panel is made dynamicaly, viewing page by viewing page like smartphones  do.
+To scroll through your picture library you can select a folder in the left panel or scroll directly in the photowall. Going down and up will lead you to next or previous directory.</p>
+<p>
+It also allows you to have basics management of photos (change dates, copy a group of photos to another directory, delete...).</p>
+    <p>The photowall shows the photos in a descending sorted on the file modification date for each directory. If your modification date doesn't represent the taken date, you can use the change dates facilities to get the correct sorting.</p>
+    <p> Click on the thumbnail to open the photo in fullscreen mode </p>
+<h2>Actions</h2>
+    <h3>Main menu</h3>
+   <ul>
+        <li>Refresh Thumbnails: This process will create <span foreground=\"#EC8156\">thumbnails</span> for all <span foreground=\"#EC8156\">your photos</span>. It can be long!!! The app uses thumbnails to display photo walls and it can take time to create one for each photo. On basic laptop, it can take 7mn to generate thumbnails for 10000 photos. Each thumbnail costs about 10ko and is stored in you home dir in the .pwall subdir. The best thing is to run once at first time or when you renew massively your photos. Updates will be done based on file's last modified date. Nevertheless feel free to cancel this operation if it is not the right moment.The app will create thumbnails <span foreground=\"#EC8156\">on the fly.</span> But the UI might <span foreground=\"#EC8156\">freeze</span> some time to time.</li>
+       <li>Help gives you access to this current help</li>
+    </ul>      
+    <h3>Actions in the directory tree</h3>
+    <p>Note that when you open the app or when you select a new directory to display, the focus leaves the tree panel and goes directly to the photowall. This means that you can scroll directly with keys up and down to catch the photo you need. The drawback is that you never get the focus a long time in the tree panel.</p>
+        <ul>
+            <li>Just click on a directory to view its photowall</li>
+            <li>Ctrl-left put the focus on the directory tree and go up and down in the tree with keys. Mind the directory is refreshed 300ms after the new dir selection. So if you move quickly with key up and down to a directory, the app won't load the in between directories in the photowall to save time and be smoother.</li>
+            <li>Ctrl F to search in the directory tree. It will also hide the searchbar when it is no more needed.</li>
+            <ul>
+                <li>Enter the word or part of it and [enter]</li>
+                <li>The first found folder will be selected</li>
+                <li>To go to next result if any, use buttons</li>
+            </ul>
+            <li>Right click on a directory to open the context menu</li>
+            <ul>
+                <li>"Search Tree" to open the search box</li>
+                <li>"Refresh Tree" to seek for changes in the disk</li>
+                <li>"Rename Folder" open a dialog box to rename it</li>
+                <li>"Move Folder" open a dialog box to select the new parent folder</li>
+                <li>"Delete Folder" deletes the folder if it is empty</li>
+                <li>"New Folder" attaches a new folder to the selected folder</li>
+                
+            </ul>
+        </ul>
+    <h3>Actions in the photowall</h3>
+    <ul>
+        <li>Use right, left, top, bottom keys to navigate through the photowall</li>
+        <li>ctrl-left to put the focus on the directory tree and go up and down in the tree with keys</li>
+        <li>Use enter or ctrl-o to open the selected photo in full screen</li>
+    </ul>
+
+    <h3>Action in fullscreen mode</h3>
+    <ul>
+        <li>Right, left keys to see the next or previous photo of your library</li>
+        <li>Ctrl + or - to zoom in or out</li>
+        <li>Escape key to quit fullscreen mode and return to the photowall</li>
+        <li>Alt enter to get the properties of the photo</li>
+        <li>Ctrl C to open the copy dialog</li>
+        <li>Delete to remove the current photo from its directory</li>
+        <li>Right click or Context Menu key or Ctrl O to open the context menu</li>
+        <ul>
+            <li>"Open with > Terminal" to open the terminal with the directory of the photo and run commands over photo (ctrl shift V drops the file name in your terminal)</li>
+            <li>"Open with > ..." the other actions are the photo viewers or editors found in your machine</li>
+            <li>"Share > Mail" to send the current photo by your default mail application (Geary, Thunderbird, xdg-email compliant app)</li>
+            <li>"Share > Web Whatsapp" to send the current photo via whatsapp (when you attach the photo use ctrl v to get the current photo)</li>
+            <li>"Share > Facebook" to post the current photo to Facebook (when you attach the photo use ctrl v to get the current photo)</li>
+            <li>"Properties" show the exif data of the photo</li>
+            <li>"Copy To" copy the current photo to a chosen directory via a dialog box</li>
+            <li>"Date Operations > Change file's date with Exif's date" updates the file's modification date with the date taken exif data</li>
+            <li>"Date Operations > Entry a new file's date" updates the file's modification date and the date taken exif data with a new date/time</li>
+        </ul>
+    </ul>
+<h2>Installation comments</h2>
+    <ul>
+        <li>the pwall cmd is installed in /usr/bin</li>
+        <li>the application resources are installed in /usr/share/pwall</li>
+        <li>the app icon is in /usr/share/icons/hicolor/128x128/apps</li>
+        <li>the .desktop is installed in /usr/share/applications</li>
+        <li>the .ini and the created thumbnails are in ~/.pwall</li>
+    </ul>
+</body>
+</html>
