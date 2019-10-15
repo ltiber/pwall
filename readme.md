@@ -27,7 +27,8 @@ over the GTK 3 framework.
 To enjoy all the functions you also need to install jhead
 with sudo apt install jhead
 
-You  build also the build and install a package with the makefile located 
+You can also build and install a package with the makefile located in the src dir.
+With a terminal, goto this dir and run $make then $make install
 
 
 
