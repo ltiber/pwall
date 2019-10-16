@@ -2,25 +2,35 @@
 <body>
 
 
-<h1>Help for Pwall App</h1>
-    <h2> What is Pwall App?</h2>
-<p>This is photo manager and navigator. It's a file browser adapted to photo context.
-    It shows the folders of your pictures main directory in the left pane and a photowall in the right.</p>
-    <p> The directories are descending sorted</p>
-    <p>
-        The photowall is a scrolling panel of square thumbnails giving a preview of each photo. 
-Loading and unloading of this scrolling panel is made dynamicaly, viewing page by viewing page like smartphones  do.
-To scroll through your picture library you can select a folder in the left panel or scroll directly in the photowall. Going down and up will lead you to next or previous directory.</p>
+<h1>Help for pwall App</h1>
+    <h2> What is pwall App?</h2>
+    
+    
+<p>pwall is modern style photo viewer and organizer.
+It shows the folders of your photos main directory
+in the left pane and a photowall in the right.</p>
+    <p> The directories are descending sorted.</p>
+    <p>The photowall is a scrolling panel of square thumbnails
+giving a preview of each photo. Loading and unloading of this 
+scrolling panel is made dynamicaly, viewing page by viewing page
+like smartphones do.
+To scroll through your photo library, you can select a folder in the left panel or scroll directly in the photowall. Going down and up will lead you to next or previous directory.</p>
 <p>
-It also allows you to have basics management of photos (change dates, copy a group of photos to another directory, delete...).</p>
+pwall also allows you to have basics management of photos (change dates, copy a group of photos to another directory, delete, share, get GPS data...) but doesn't have edit functions.</p>
     <p>The photowall shows the photos in a descending sorted on the file modification date for each directory. If your modification date doesn't represent the taken date, you can use the change dates facilities to get the correct sorting.</p>
-    <p> Click on the thumbnail to open the photo in fullscreen mode </p>
+    <p> Clicking on a photo opens it in fullscreen mode. You can continue your navigation in this mode with left and right keys. </p>
+    <p>pwall supports only jpg and png files. But for my usage, it was enough.</p>
+    <p>pwall doesn't import photos in a specific database. It only uses the file system and can handle smoothly 50000 photos with a modern laptop.</p>
+    <p>You can use pwall as an alternative to Shotwell to browse your photo gallery.</p>
+
 <h2>Actions</h2>
     <h3>Main menu</h3>
    <ul>
         <li>Refresh Thumbnails: This process will create <span foreground=\"#EC8156\">thumbnails</span> for all <span foreground=\"#EC8156\">your photos</span>. It can be long!!! The app uses thumbnails to display photo walls and it can take time to create one for each photo. On basic laptop, it can take 7mn to generate thumbnails for 10000 photos. Each thumbnail costs about 10ko and is stored in you home dir in the .pwall subdir. The best thing is to run once at first time or when you renew massively your photos. Updates will be done based on file's last modified date. Nevertheless feel free to cancel this operation if it is not the right moment.The app will create thumbnails <span foreground=\"#EC8156\">on the fly.</span> But the UI might <span foreground=\"#EC8156\">freeze</span> some time to time.</li>
-       <li>Help gives you access to this current help</li>
+        <li>Change photos directory gives you the option to specify again the location of your photos library</li>
+       <li>Help gives you access to this current help.</li>
     </ul>      
+    
     <h3>Actions in the directory tree</h3>
     <p>Note that when you open the app or when you select a new directory to display, the focus leaves the tree panel and goes directly to the photowall. This means that you can scroll directly with keys up and down to catch the photo you need. The drawback is that you never get the focus a long time in the tree panel.</p>
         <ul>
@@ -48,6 +58,22 @@ It also allows you to have basics management of photos (change dates, copy a gro
         <li>Use right, left, top, bottom keys to navigate through the photowall</li>
         <li>ctrl-left to put the focus on the directory tree and go up and down in the tree with keys</li>
         <li>Use enter or ctrl-o to open the selected photo in full screen</li>
+        <li>Right click or Context Menu key to open context menu</li>
+        <ul>
+            <li>"Refresh" There is no automatic refresh if some changes happen in the file system with other tools. Just click this option to update the photowall.
+            <li>"Open with > Terminal" to open the terminal with the directory of the selected photos. You can run any commands over photos. ctrl shift V drops the file names in your terminal from the clipboard</li>
+            <li>"Open with > Google Maps" to get the location of the focused photo if GPS data exists.</li>
+            <li>"Open with > ..." the other actions are the photo viewers or editors found in your machine</li>
+            <li>"Share > Mail" to send the selected photos with your default mail application (Geary, Thunderbird, xdg-email compliant app)</li>
+            <li>"Share > Web Whatsapp" to send the focused photo via whatsapp (when you attach the photo use ctrl v to get the current photo)</li>
+            <li>"Share > Facebook" to post the focused photo to Facebook (when you attach the photo use ctrl v to get the current photo)</li>
+            <li>"Properties" show the exif data of the photo. You can copy all the data of this box for further usage.</li>
+            <li>"Copy To" copies the current selection to a chosen directory via a dialog box</li>
+            <li>"Move To" moves the current selection to a chosen directory via a dialog box</li>
+            <li>"Date Operations > Change file's date with Exif's date" updates the file's modification date with the date taken exif data</li>
+            <li>"Date Operations > Entry a new file's date" updates the file's modification date and the date taken exif data with a new date/time</li>
+        </ul>
+
     </ul>
 
     <h3>Action in fullscreen mode</h3>
@@ -61,12 +87,14 @@ It also allows you to have basics management of photos (change dates, copy a gro
         <li>Right click or Context Menu key or Ctrl O to open the context menu</li>
         <ul>
             <li>"Open with > Terminal" to open the terminal with the directory of the photo and run commands over photo (ctrl shift V drops the file name in your terminal)</li>
+            <li>"Open with > Google Maps" to get the location of the current photo if GPS data exists.</li>
             <li>"Open with > ..." the other actions are the photo viewers or editors found in your machine</li>
-            <li>"Share > Mail" to send the current photo by your default mail application (Geary, Thunderbird, xdg-email compliant app)</li>
+            <li>"Share > Mail" to send the current photo with your default mail application (Geary, Thunderbird, xdg-email compliant app)</li>
             <li>"Share > Web Whatsapp" to send the current photo via whatsapp (when you attach the photo use ctrl v to get the current photo)</li>
             <li>"Share > Facebook" to post the current photo to Facebook (when you attach the photo use ctrl v to get the current photo)</li>
-            <li>"Properties" show the exif data of the photo</li>
-            <li>"Copy To" copy the current photo to a chosen directory via a dialog box</li>
+            <li>"Properties" show the exif data of the photo. You can copy all the data of this box for further usage.</li>
+            <li>"Copy To" copies the current photo to a chosen directory via a dialog box</li>
+            <li>"Move To" moves the current photo to a chosen directory via a dialog box</li>
             <li>"Date Operations > Change file's date with Exif's date" updates the file's modification date with the date taken exif data</li>
             <li>"Date Operations > Entry a new file's date" updates the file's modification date and the date taken exif data with a new date/time</li>
         </ul>
