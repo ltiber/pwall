@@ -14,7 +14,7 @@ like smartphones do.
 It also allows you to have basics management of photos
 (change dates, copy a group of photos to another directory, delete, share, get GPS data...).
 Clicking on a photo opens it in fullscreen mode. You can continue your navigation in this mode with left and right keys. 
-I use it as an alternative to Shotwell.
+I use it as an alternative to Shotwell.[more...](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/help.html)
     
 ![pwall screen](https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/pwallscreenshot.png)
 ![pwall folder functions](https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/pwalloption1.png)
