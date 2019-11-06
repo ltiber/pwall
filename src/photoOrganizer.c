@@ -74,9 +74,6 @@ static void whatsappCB(GtkWidget* widget, gpointer data);
 static void facebookCB(GtkWidget* widget, gpointer data);
 static void createPopupMenu(void);
 static void setMenuPopupPosition(GtkMenu *menu, gint *x, gint *y, gboolean *push_in, gpointer user_data);
-static void createMainMenu(void);
-static void refreshThumbnailsCB(GtkWidget *widget, gpointer data);
-static void helpCB(GtkWidget *widget, gpointer data);
 static void updateStatusMessageWithDetails(int index);
 static void changeFileDateWithExif(void);
 static void deleteMenu(void);
@@ -433,40 +430,6 @@ void photoOrganizerInit(GtkWidget *waitingScreen) {
 
     //hide the searchBar
     gtk_widget_hide(searchBar);      
-}
-
-
-//application menu
-static void createMainMenu(void){
-    pMenu = gtk_menu_new();
-    GtkWidget *pMenuItem;
-    pMenuItem = gtk_menu_item_new_with_label("Refresh Thumbnails");
-    gtk_menu_shell_append(GTK_MENU_SHELL(pMenu), pMenuItem);
-    g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(refreshThumbnailsCB),NULL);
-    pMenuItem = gtk_menu_item_new_with_label("Help");
-    gtk_menu_shell_append(GTK_MENU_SHELL(pMenu), pMenuItem);
-    g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(helpCB),NULL);    
-     /* ETAPE 4 */
-    pMenuItem = gtk_menu_item_new_with_label("Fichier");
-    /* ETAPE 5 */
-    gtk_menu_item_set_submenu(GTK_MENU_ITEM(pMenuItem), pMenu);
-    /* ETAPE 6 */
-    gtk_menu_shell_append(GTK_MENU_SHELL(pMenuBar), pMenuItem);
-}
-
-static void refreshThumbnailsCB(GtkWidget *widget, gpointer data){
-    thumbnailDialogInit(GTK_WINDOW(pWindow));
-}
-
-static void helpCB(GtkWidget *widget, gpointer data){
-    GAppInfo *appInfo=g_app_info_get_default_for_uri_scheme ("http");
-    if (appInfo!=NULL){
-        char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "help.html");
-        GFile *pFile=g_file_new_for_path (helpFilePath);
-        GList *l=g_list_append(NULL,pFile); 
-        g_app_info_launch (appInfo,l, NULL, NULL);
-    }
-    g_print("helpCB");
 }
 
 /*
@@ -880,7 +843,7 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
     case GDK_KEY_Page_Up: g_print("-page_up");return FALSE;//pour laisser le scroll monter - event processed by 
     case GDK_KEY_Page_Down: g_print("-page_down");return FALSE;
     case GDK_KEY_Delete: g_print("-delete");deleteDialog(); break;
-    case GDK_KEY_F1: g_print("-F1"); helpCB(NULL,NULL); break;
+    case GDK_KEY_F1: g_print("-F1"); helpCB(NULL,NULL,NULL); break;
     case GDK_KEY_F5: g_print("-F5"); refreshPhotoWall(NULL,NULL); break;
     }
     return TRUE; //to fix the focus switch from the tree to the photowall

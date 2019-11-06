@@ -135,7 +135,7 @@ static void chgPhotoDirCB (GSimpleAction *action, GVariant *parameter, gpointer 
     initFileChooser(TRUE);
 }
 
-static void helpCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
+void helpCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
     GAppInfo *appInfo=g_app_info_get_default_for_uri_scheme ("http");
     if (appInfo!=NULL){
         char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "help.html");

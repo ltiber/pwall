@@ -23,7 +23,7 @@ I use it as an alternative to Shotwell.[more...](https://htmlpreview.github.io/?
 Installation & Build
 ------------------------
 
-Download the .deb file and install it in your linux distro. 
+Download the .deb file (release tab) and install it in your linux distro. 
 It has been tested in ubuntu 16.04 an 18.04 and has been built
 over the GTK 3 framework.
 To enjoy all the functions you also need to install jhead

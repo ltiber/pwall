@@ -10,6 +10,8 @@ install:
 	sudo cp -p ../res/pwall/* /usr/share/pwall
     
 release:
+    #check version number in deb/DEBIAN/control and in make file
+    #if you've changed resources like  png or help copy them in the deb dir
 	sudo dpkg -b ../deb/ ../release/pwall-1.0-1.deb
   
   
@@ -31,5 +33,7 @@ release:
     # gdk_display_get_monitor_at_window doesnt exist in 16.04 replaced by gdk_screen_get_monitor_at_window
     # gtk_menu_popup_at_pointer doesnt exist in 16.04 replaced by gtk_menu_popup
     # gtk_menu_popup_at_widget doesnt exist in 16.04
+    # git memo  $git add . $git commit -m "First commit"$ git remote add origin remote https://github.com/ltiber/pwall.git$git remote -v$git push origin master
+    
 
 
