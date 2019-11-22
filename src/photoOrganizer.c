@@ -1608,8 +1608,10 @@ static void searchNodes(const char *searchingText, GtkTreeIter *parent){
         char *name=g_strdup(_name);
         name=lower(g_str_to_ascii(name,NULL));
         if (strstr(name, translatedSearchingText) != NULL) { //case insensitive comparison
+            //g_print("\nfound%s\n",name); to debug
             g_ptr_array_add(searchRes,gtk_tree_model_get_path(pSortedModel, &iter)); //add the found treePath to the searchRes
-        } else if (gtk_tree_model_iter_has_child (pSortedModel, &iter)){
+        } //before I got a else here 
+        if (gtk_tree_model_iter_has_child (pSortedModel, &iter)){
             searchNodes(translatedSearchingText,&iter);
         }
         iter_valid = gtk_tree_model_iter_next(pSortedModel, &iter); //GTK_TREE_MODEL(pStore)
