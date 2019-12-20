@@ -6,5 +6,8 @@ make:
     #flatpak-builder build-dir org.pwall.Pwall.json  --force-clean --disable-cache
     #flatpak-builder build-dir org.pwall.Pwall.json  --force-clean --disable-cache  --build-shell=pwall
     #flatpak-builder --run build-dir org.pwall.Pwall.json pwall
+    #flatpak-builder --repo=repo-pwall --force-clean build-dir org.pwall.Pwall.json
+    #flatpak --user remote-add --no-gpg-verify repo-pwall repo-pwall
+    #flatpak --user install repo-pwall org.pwall.Pwall
 
 
