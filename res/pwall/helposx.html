@@ -57,7 +57,7 @@ giving a preview of each photo. Loading and unloading of this
     <p> Clicking on a photo opens it in <i>fullscreen</i> mode. You can continue your navigation in this mode with <i>left and right keys</i>. </p>
     <p>pwall supports only jpg and png files. But for my usage, it was enough.</p>
     <p>pwall <i>doesn't import</i> photos in a specific database. It only uses the file system and can handle smoothly 50000 photos with a modern laptop.</p>
-    <p>You can use pwall as an <i>alternative</i> to Shotwell to browse your photo gallery.</p>
+    <p>You can use pwall as an <i>alternative</i> to Photos to browse your photo gallery.</p>
 
 <h2>Actions</h2>
     <h3>Main menu</h3>
@@ -71,8 +71,7 @@ giving a preview of each photo. Loading and unloading of this
     <p>Note that when you open the app or when you select a new directory to display, the <i>focus</i> leaves the tree panel and goes directly to the photowall. This means that you can scroll directly with keys up and down to catch the photo you need. The drawback is that you never get the focus a long time in the tree panel.</p>
         <ul>
             <li>Just click on a <i>directory</i> to view its photowall</li>
-            <li>Ctrl-left put the focus on the directory tree and go up and down in the tree with keys. Mind the directory is refreshed 300ms after the new dir selection. So if you move quickly with key up and down to a directory, the app won't load the in between directories in the photowall to save time and be smoother.</li>
-            <li>Ctrl-F to <i>search</i> in the directory tree. It will also hide the searchbar when it is no more needed.</li>
+            <li>Cmd-F to <i>search</i> in the directory tree. It will also hide the searchbar when it is no more needed.</li>
             <ul>
                 <li>Enter the word or part of it and [enter]</li>
                 <li>The first found folder will be selected</li>
@@ -92,22 +91,21 @@ giving a preview of each photo. Loading and unloading of this
     <h3>Actions in the photowall</h3>
     <ul>
         <li>Use right, left, top, bottom <i>keys</i> to navigate through the photowall</li>
-        <li>ctrl-left to put the focus on the directory tree and go up and down in the tree with keys</li>
-        <li>Use <i>enter</i> or ctrl-O to open the selected photo in full screen</li>
-        <li>Alt-enter to get the <i>properties</i> of the photo</li>
-        <li>Right click or Context Menu key to open <i>context menu</i></li>
+        <li>Use <i>enter</i> or Cmd-O to open the selected photo in full screen</li>
+        <li>Cmd-I to get the <i>properties</i> of the photo</li>
+        <li>Ctrl-Click to open the <i>context menu</i></li>
         <ul>
             <li>"Refresh" There is no automatic refresh if some changes happen in the file system with other tools. Just click this option to update the photowall.
-            <li>"Open with > Terminal" to open the terminal with the directory of the selected photos. You can run any commands over photos. ctrl-shift-V drops the file names in your terminal from the clipboard</li>
+            <li>"Open with > Terminal" to open the terminal with the directory of the selected photos. You can run any commands over photos. Cmd-V drops the file names in your terminal from the clipboard</li>
             <li>"Open with > Google Maps" to get the location of the focused photo if GPS data exists.</li>
             <li>"Open with > ..." the other actions are the photo viewers or editors found in your machine</li>
-            <li>"Share > Mail" to send the selected photos with your default mail application (Geary, Thunderbird, xdg-email compliant app)</li>
-            <li>"Share > Web Whatsapp" to send the focused photo via whatsapp (when you attach the photo use ctrl-V to get the current photo)</li>
-            <li>"Share > Facebook" to post the focused photo to Facebook (when you attach the photo use ctrl-V to get the current photo)</li>
+            <li>"Share > Mail" to send the selected photos with your default mail application</li>
+            <li>"Share > Web Whatsapp" to send the focused photo via whatsapp (when you attach the photo use Cmd-V to get the current photo)</li>
+            <li>"Share > Facebook" to post the focused photo to Facebook (when you attach the photo use Cmd-V to get the current photo)</li>
             <li>"Properties" show the exif data of the photo. You can copy all the data of this box for further usage.</li>
-            <li>"Copy To" copies the current selection to a chosen directory via a dialog box (Ctrl-C key shortcut)</li>
+			<li>"Copy To" copies the current selection to a chosen directory via a dialog box (Cmd-C shortcut)</li>
             <li>"Move To" moves the current selection to a chosen directory via a dialog box</li>
-            <li>"Delete" removes the selected photos (Suppr key shortcut)</li>
+            <li>"Delete" removes the selected photos (BackSpace key shortcut)</li>
             <li>"Date Operations > Change file's date with Exif's date" updates the file's modification date with the date taken exif data</li>
             <li>"Date Operations > Entry a new file's date" updates the file's modification date and the date taken exif data with a new date/time</li>
         </ul>
@@ -117,33 +115,27 @@ giving a preview of each photo. Loading and unloading of this
     <h3>Action in fullscreen mode</h3>
     <ul>
         <li>Right, left keys to see the <i>next or previous</i> photo of your library</li>
-        <li>Ctrl + or - to <i>zoom</i> in or out</li>
+        <li>Cmd + or - to <i>zoom</i> in or out</li>
         <li>Escape key to quit fullscreen mode and return to the photowall</li>
-        <li>Alt-enter to get the <i>properties</i> of the photo</li>
-        <li>Ctrl-C to open the copy dialog</li>
-        <li>Delete to remove the current photo from its directory</li>
-        <li>Right click or Context Menu key or Ctrl-O to open the <i>context menu</i></li>
+        <li>Cmd-I to get the <i>properties</i> of the photo</li>
+        <li>Ctrl-Click open the <i>context menu</i></li>
         <ul>
             <li>"Open with > Terminal" to open the terminal with the directory of the photo and run commands over photo (ctrl-shift-V drops the file name in your terminal)</li>
             <li>"Open with > Google Maps" to get the location of the current photo if GPS data exists.</li>
             <li>"Open with > ..." the other actions are the photo viewers or editors found in your machine</li>
-            <li>"Share > Mail" to send the current photo with your default mail application (Geary, Thunderbird, xdg-email compliant app)</li>
-            <li>"Share > Web Whatsapp" to send the current photo via whatsapp (when you attach the photo use ctrl-V to get the current photo)</li>
-            <li>"Share > Facebook" to post the current photo to Facebook (when you attach the photo use ctrl-V to get the current photo)</li>
+            <li>"Share > Mail" to send the current photo with your default mail application</li>
+            <li>"Share > Web Whatsapp" to send the current photo via whatsapp (when you attach the photo use Cmd-V to get the current photo)</li>
+            <li>"Share > Facebook" to post the current photo to Facebook (when you attach the photo use Cmd-V to get the current photo)</li>
             <li>"Properties" show the exif data of the photo. You can copy all the data of this box for further usage.</li>
-            <li>"Copy To" copies the current photo to a chosen directory via a dialog box (Ctrl-C shortcut)</li>
+            <li>"Copy To" copies the current photo to a chosen directory via a dialog box (Cmd-C shortcut)</li>
             <li>"Move To" moves the current photo to a chosen directory via a dialog box</li>
-            <li>"delete" removes the current photo (Suppr key shortcut) </li>
+            <li>"delete" removes the current photo (BackSpace key shortcut) </li>
             <li>"Date Operations > Change file's date with Exif's date" updates the file's modification date with the date taken exif data</li>
             <li>"Date Operations > Entry a new file's date" updates the file's modification date and the date taken exif data with a new date/time</li>
         </ul>
     </ul>
 <h2>Installation comments</h2>
     <ul>
-        <li>the pwall cmd is installed in /usr/bin</li>
-        <li>the application resources are installed in /usr/share/pwall</li>
-        <li>the app icon is in /usr/share/icons/hicolor/128x128/apps</li>
-        <li>the .desktop is installed in /usr/share/applications</li>
         <li>the .ini and the created thumbnails are in ~/.pwall</li>
     </ul>
 </body>

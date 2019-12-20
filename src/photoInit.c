@@ -98,10 +98,13 @@ int main(int argc, char *argv[]){
         
     //res - where the resources are installed (icons, help ...)
     //For example, on linux, it is /usr/share/pwall
-    const char *TSOFT_RES = g_getenv ("TSOFT_RES");  //for mac support
-	if (TSOFT_RES == NULL) TSOFT_RES="/usr/share"; //example /usr/share/hello1	
-	resDir = g_strdup_printf("%s/%s",TSOFT_RES,"pwall"); 
-    g_print("\nnew application\n");
+    const char *APP_RES = g_getenv ("PWALL_RES");  //for OSX support
+	if (APP_RES == NULL) APP_RES="/usr/share"; //example /usr/share/pwall	
+	resDir = g_strdup_printf("%s/%s",APP_RES,"pwall"); 
+    g_print("\nnew application - resources in %s\n",resDir);
+    #ifdef FLATPAK
+    resDir="/app/extra/export/share";
+    #endif 	
     int status;
     app = gtk_application_new ("com.tsoft.pwall", G_APPLICATION_NON_UNIQUE | G_APPLICATION_HANDLES_OPEN);//G_APPLICATION_HANDLES_OPEN to get the command line
     g_signal_connect (app, "activate", G_CALLBACK (appActivated), NULL);
@@ -135,14 +138,38 @@ static void chgPhotoDirCB (GSimpleAction *action, GVariant *parameter, gpointer 
     initFileChooser(TRUE);
 }
 
-void helpCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
-    GAppInfo *appInfo=g_app_info_get_default_for_uri_scheme ("http");
-    if (appInfo!=NULL){
-        char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "help.html");
+void helpCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){    
+    #ifdef LINUX
+    char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "help.html");
+    GError *err = NULL;
+    gchar *stdOut = NULL;
+    gchar *stdErr = NULL;
+    int status=0;
+    char *cmd = g_strdup_printf("xdg-open %s",helpFilePath); //run the browser
+    g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
+    if (err){ 
+        g_print ("-error: %s\n", err->message);
+    }
+    //g_print("\nhelp path =%s\n",helpFilePath);
+    /*GAppInfo *appInfo=g_app_info_get_default_for_uri_scheme ("http");
+    if (appInfo!=NULL){        
         GFile *pFile=g_file_new_for_path (helpFilePath);
         GList *l=g_list_append(NULL,pFile); 
         g_app_info_launch (appInfo,l, NULL, NULL);
+    }*/
+    #elif OSX
+    char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "helposx.html");
+    GError *err = NULL;
+    gchar *stdOut = NULL;
+    gchar *stdErr = NULL;
+    int status=0;
+    char *cmd = g_strdup_printf("open %s",helpFilePath); //run the browser
+    g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
+    if (err){ 
+        g_print ("-error: %s\n", err->message);
     }
+    //TODO WIN
+    #endif
 }
 
 const GActionEntry app_actions[] = {
@@ -162,7 +189,6 @@ static void appStarted (GtkApplication *app, gpointer user_data) {
     g_menu_append (menu, "Help", "app.help");
     g_menu_append (menu, "Quit", "app.quit");
     gtk_application_set_app_menu (GTK_APPLICATION (app),G_MENU_MODEL (menu));
-    //gtk_application_set_menubar (GTK_APPLICATION (app),G_MENU_MODEL (menu));
     g_object_unref (menu);
 }
 
@@ -179,7 +205,7 @@ static void appActivated (GtkApplication *app, gpointer user_data) {
    	gchar *fontName;
    	g_object_get (G_OBJECT(settings),"gtk-font-name", &fontName,NULL);
    	g_print("-old font %s-", fontName);
-   	g_object_set (G_OBJECT(settings), "gtk-font-name", "Sans 6",NULL);
+   	//g_object_set (G_OBJECT(settings), "gtk-font-name", "Sans 6",NULL);
     #endif
     
     pVBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);

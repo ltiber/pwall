@@ -1,0 +1,9 @@
+make:
+	gcc -D LINUX -D FLATPAK -o pwall src/thumbnail.c src/tsoft.c src/photoInit.c src/photoDialogs.c src/photoOrganizer.c src/photoViewer.c -Isrc -g -lm `pkg-config --libs --cflags gtk+-3.0`
+	#gcc -D LINUX -D FLATPAK -o pwall thumbnail.c tsoft.c photoInit.c photoDialogs.c photoOrganizer.c photoViewer.c -I. -g -lm `pkg-config --libs --cflags gtk+-3.0`
+    #This make file has been done for flatpak builder
+    #usage :
+    #flatpak-builder build-dir org.pwall.Pwall.json  --force-clean --disable-cache
+    #flatpak-builder build-dir org.pwall.Pwall.json  --force-clean --disable-cache  --build-shell=pwall
+    
+

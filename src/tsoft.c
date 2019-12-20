@@ -659,10 +659,13 @@ widget needs to be a realized window
 we used gdk_screen_get_monitor_at_window to be compliant with gtk-3.18
 */
 int getMonitorWidth(GtkWidget *widget){        
-        //GdkDisplay *dpy = gtk_widget_get_display(widget);
+        
         GdkScreen *scr = gtk_widget_get_screen(widget);
         GdkWindow *win = gtk_widget_get_window(widget);
-        //GdkMonitor *monitor = gdk_display_get_monitor_at_window(dpy, win);
+        /*GdkDisplay *dpy = gtk_widget_get_display(widget);
+        GdkMonitor *_monitor = gdk_display_get_monitor_at_window(dpy, win);
+        int scale=gdk_monitor_get_scale_factor(_monitor);
+    g_print("scale%i",scale);*/
         int monitor = gdk_screen_get_monitor_at_window(scr, win); 
         GdkRectangle geometry;
         //gdk_monitor_get_geometry(monitor, &geometry);

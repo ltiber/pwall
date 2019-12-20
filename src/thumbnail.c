@@ -178,7 +178,12 @@ static void *heavyWork(void *pointer){
     gint64 initTime=g_get_monotonic_time ();        
     state = RUNNING;
     //g_print("just before thumbnails creating");
-    int counter=createThumbnail4Dir(photosRootDir,thumbnailDir, 92, followupCB);
+    #if defined(LINUX) || defined(WIN)
+    int _size=PHOTO_SIZE;
+    #else 
+    int _size=PHOTO_SIZE*2;
+    #endif
+    int counter=createThumbnail4Dir(photosRootDir,thumbnailDir, _size, followupCB);
     //finished
     if (state == RUNNING) state=FINISHED; 
     if (state != DESTROYED) {

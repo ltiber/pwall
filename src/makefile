@@ -1,5 +1,6 @@
 make:
 	gcc -D LINUX  -o ../bin/pwall thumbnail.c tsoft.c photoInit.c photoDialogs.c photoOrganizer.c photoViewer.c -I. -g -lm `pkg-config --libs --cflags gtk+-3.0`
+	# gcc -D OSX  -o ../bin/pwall thumbnail.c tsoft.c photoInit.c photoDialogs.c photoOrganizer.c photoViewer.c -I. -g -lm `pkg-config --libs --cflags gtk+-3.0`	
 	# even if we have deprecated function gcc compile. -w means no warning are output
 	# we have warnings because we want to be compliant with ubuntu 16.04 and 18.04
 	# libgtk-3-dev package must be installed
@@ -8,11 +9,18 @@ make:
 install:    
 	sudo cp ../bin/pwall /usr/bin
 	sudo cp -p ../res/pwall/* /usr/share/pwall
-    
+
+installosx:
+	cp ../bin/pwall ~/gtk/inst/bin/
+	mkdir -p ~/gtk/inst/share/pwall
+	cp ../res/pwall/* ~/gtk/inst/share/pwall
+	rm -rf ../osx/pwall.app
+	gtk-mac-bundler ../osx/pwall.bundle
+	    
 release:
     #check version number in deb/DEBIAN/control and in make file
     #if you've changed resources like  png or help copy them in the deb dir
-	dpkg -b ../deb/ ../release/pwall-1.0-2.deb
+	dpkg -b ../deb/ ../release/pwall-1.0-3.deb
   
   
   

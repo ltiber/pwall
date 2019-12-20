@@ -133,7 +133,6 @@ static gboolean  changeDateCB (GtkWidget *event_box, GdkEventButton *event, gpoi
                 }
             }
         }
-        #ifdef LINUX
         cmd1=g_strconcat(cmd1,fileList->str,NULL);
         cmd2=g_strconcat("jhead -dsft ",fileList->str,NULL);
         g_string_free(fileList, TRUE);    
@@ -143,11 +142,7 @@ static gboolean  changeDateCB (GtkWidget *event_box, GdkEventButton *event, gpoi
         //cmd2 jhead -dsft "file1" "file2" "file3"
         g_spawn_command_line_sync (cmd1, &stdOut, &stdErr, &status, &err);
         g_spawn_command_line_sync (cmd2, &stdOut, &stdErr, &status, &err);
-        #elif OSX
-        //TODO
-        #elif WIN
-        //TODO
-        #endif
+        //TODO WIN special
         if (err){
             error=TRUE;
             g_print ("-error: %s\n", err->message);
@@ -226,6 +221,8 @@ void copyToDialog(void){
     }
     if (res == GTK_RESPONSE_CANCEL){
         if (activeWindow == ORGANIZER) updateStatusMessage("Copy Canceled");
+        gtk_widget_destroy (dialog);
+        return;
     }
     gtk_widget_destroy (dialog);
     if (activeWindow == ORGANIZER) updateStatusMessage("Please wait, copy is pending...");
@@ -254,19 +251,20 @@ void copyToDialog(void){
         #ifdef LINUX
         //if file exists in target dir, cp wil backup them with a suffix ~x~
         cmd = g_strdup_printf("cp --backup=numbered -p %s -t \"%s\"",fileList->str, targetFolder);
-        g_print("cmd=%s",cmd);
+        
         //change the suffix to prefix
         //we use a bash, we can't use cd, for directly with g_spawn
         //for file in *.~?~; do mv $file `echo $file |sed -e \"s/\\(.*\\)\\.\\(~[0-9]~$\\)/\\2\\1/\"`;done"
         cmd2= g_strdup_printf("\"%s/%s\" \"%s\"",resDir,"clearbackup.sh", targetFolder); //rename backup files
-        #elif OSX
-        //TODO
+        g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
+        g_spawn_command_line_sync (cmd2, &stdOut, &stdErr, &status, &err);
+	#elif OSX
+	cmd = g_strdup_printf("cp -p %s \"%s\"",fileList->str, targetFolder);
+	g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
         #elif WIN
         //TODO
         #endif
-        g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
-        g_spawn_command_line_sync (cmd2, &stdOut, &stdErr, &status, &err);
-        
+        g_print("cmd=%s",cmd);
         if (err){ 
             g_print ("-error: %s\n", err->message);
             if (activeWindow == VIEWER) {
@@ -370,15 +368,10 @@ void moveToDialog(void){
             }
             updateStatusMessage(g_strdup_printf("%i file(s) moved to %s",count, targetFolder));
         }
-        #ifdef LINUX
         //if file exists in target dir, mv will force the move
         cmd = g_strdup_printf("mv %s \"%s\"",fileList->str, targetFolder);
         g_print("cmd=%s",cmd);
-        #elif OSX
-        //TODO
-        #elif WIN
-        //TODO
-        #endif
+        //TODO WIN
         g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
         
         if (err){ 
@@ -492,14 +485,17 @@ char * showExifDialog(gboolean show){
             _fullPath=pPhotoObj->fullPath;
         }       
     }          
-    if (_fullPath == NULL) return;
+    if (_fullPath == NULL) return NULL;
     if (g_str_has_suffix(_fullPath, ".png") || g_str_has_suffix(_fullPath, ".PNG")){
             updateStatusMessage("PNG files'properties are not supported! Use exiftool.");
-        return;
+        return NULL;
     }
     
-    #ifdef LINUX
     cmd = g_strdup_printf("jhead \'%s\'",_fullPath);
+    g_print("jhead cmd %s",cmd);
+	//TODO  WIN
+    // check the following url for windows support
+    //https://hpdc-gitlab.eeecs.qub.ac.uk/binqbu2002/uniserver-vm-benchmarks/raw/master/parsec/pkgs/libs/glib/src/tests/spawn-test.c
     //cmd = g_strdup_printf("exiftool \'%s\'",_fullPath); //test with exiftool utilities
     g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err); 
     if (err){
@@ -529,13 +525,7 @@ char * showExifDialog(gboolean show){
         }
         g_free (stdOut);
     }
-    #elif WIN
-        // check the following url for windows support
-        //https://hpdc-gitlab.eeecs.qub.ac.uk/binqbu2002/uniserver-vm-benchmarks/raw/master/parsec/pkgs/libs/glib/src/tests/spawn-test.c
-      g_print ("doesn't support windows for the moment-\n");
-    #elif OSX
-        //TODO
-    #endif
+
     g_free(cmd);
     if (!show) return gps;
 }

@@ -31,7 +31,12 @@ Most actions(copy, delete, share, change date...) on photos are available in pho
 #define WAITING 2 //used for row->loaded (FALSE,WAITING,TRUE)
 
 //public constante
+#ifdef OSX
+int META_KEY = 16; //apple command key for click
+int PHOTO_SIZE = 64;
+#else
 int PHOTO_SIZE = 92;
+#endif
 int MARGIN = 2;
 enum {CTRL,SHIFT};
 
@@ -85,6 +90,8 @@ static void moveFolderCB(GtkWidget* widget, gpointer data);
 static void deleteFolderCB(GtkWidget* widget, gpointer data);
 static void newFolderCB(GtkWidget* widget, gpointer data);
 static gboolean clickTreeCB(GtkWidget *event_box, GdkEventButton *event, gpointer data);
+static gboolean expandCollapseTreeCB (GtkTreeView *tree_view, GtkTreeIter *iter, GtkTreePath *path, gpointer user_data);
+static int reClickSameFolder(gpointer user_data);
 //functions to calculate the rows of the photowall
 static int findCountersInArray(int idNode);
 static void calculateRows ();
@@ -114,6 +121,7 @@ static void showHideSearchBtn(void);
 static void hideSearchBtn(GtkTreePath *treePath);
 static void showSearchBarCB(GtkWidget* widget, gpointer data);
 static void resetCurrentFilesInFolder(void);
+
     
 //private global variable (static makes the variable private)
 static GtkWidget *pWindow;
@@ -153,6 +161,7 @@ static int searchIndex=-1; //used for the up and down searching button
 static int _keyPostponed=FALSE;
 static int scInterruptLoading=FALSE;
 static GtkWidget *_waitingScreen;
+static gboolean expandCollapseTreePending; 
 
 //public variable accessible for all the .c modules
 //you need extern on the .h to let it run
@@ -207,6 +216,12 @@ void photoOrganizerInit(GtkWidget *waitingScreen) {
     .focusBox{\
       border-style: solid;\
       border-width:4px;\
+      border-color:rgba(236,129,86,1);\
+      border-radius:0px;\
+    }\
+    .focusBoxOSX{\
+      border-style: solid;\
+      border-width:3px;\
       border-color:rgba(236,129,86,1);\
       border-radius:0px;\
     }\
@@ -501,7 +516,11 @@ static void insertPhotoWithImage(GtkWidget *image, int col, int row, int idNodeF
     pFocusBox=gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_no_show_all (pFocusBox, TRUE); //set invisible
     GtkStyleContext *context2=gtk_widget_get_style_context (pFocusBox);
+    #ifdef OSX
+    gtk_style_context_add_class (context2,   "focusBoxOSX");
+    #else
     gtk_style_context_add_class (context2,   "focusBox");
+    #endif
     pLabel4=gtk_label_new("");
     gtk_box_pack_start(GTK_BOX(pFocusBox), pLabel4, TRUE, TRUE, 0); 
     gtk_overlay_add_overlay (GTK_OVERLAY (pOverlay), pFocusBox);
@@ -589,15 +608,24 @@ static gboolean  clickPhotoCB (GtkWidget *event_box, GdkEventButton *event, gpoi
             // ctrl click for mac support
             gtk_menu_popup (GTK_MENU(pMenuPopup), NULL, NULL, NULL, NULL, event->button, event->time);  //gtk-3.18
             //gtk_menu_popup_at_pointer(GTK_MENU(pMenuPopup), NULL); //gtk-3.22
+            return FALSE;
             #elif WIN
             //TODO
             #endif            
-        } else if (event->state & GDK_SHIFT_MASK){
+        }  
+        #ifdef OSX
+        else if (event->state == META_KEY){
+            //apple click only OSX
+            g_print("meta\n");
+            multiSelectPhoto(arrayIndex->value,CTRL);
+            return FALSE; //we don't run the changefocus
+        } 
+        #endif 
+        else if (event->state & GDK_SHIFT_MASK){
             multiSelectPhoto(arrayIndex->value,SHIFT);
             changeFocus(arrayIndex->value,TOP,FALSE);
             return FALSE;
-        }
-        //TODO pour le mac command - click gauche à gerer pour le multiselect
+        }       
     }
     
     gint64 now=g_get_monotonic_time ();
@@ -650,7 +678,7 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
         }
         // handle specific ctrl F
         if ((event->keyval == GDK_KEY_f || event->keyval == GDK_KEY_F) &&
-            (event->state & GDK_CONTROL_MASK)) showSearchBarCB(searchBar,NULL);
+            ((event->state & GDK_CONTROL_MASK)||(event->state & GDK_META_MASK))) showSearchBarCB(searchBar,NULL);
         return FALSE; //to propagate the key
     } 
     if ((gtk_widget_is_focus(btnUp)||gtk_widget_is_focus(btnDown)) && (event->keyval == GDK_KEY_Return)) return FALSE;
@@ -691,6 +719,14 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
         int monitor=gdk_screen_get_monitor_at_window(gdkScreen,gdkWindow);
         if (newFocus!=-1) photoViewerInit(GTK_WINDOW(pWindow), newFocus, monitor);   //double click callback : launch new screen with the photo 
         break; //1er return pas très fiable puis je sais pas pourquoi ok
+    case GDK_KEY_i:
+    case GDK_KEY_I: //OSX shortcut
+    	g_print("state %i GDK_META_MASK %i\n",event->state,GDK_META_MASK);
+        if (event->state & GDK_META_MASK) {
+            g_print("-alt return");
+            showExifDialog(TRUE);
+        }
+        break;
     case GDK_KEY_Left:
         g_print("-left");
         if (event->state & GDK_CONTROL_MASK) {
@@ -801,48 +837,46 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
         break;
     case GDK_KEY_a: //select all
     case GDK_KEY_A:
-        if (event->state & GDK_CONTROL_MASK) {
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
             g_print("-ctrl a");
             //not compliant with the lazy loading of the images
             // multiSelectPhoto(-1);
         }
         break;
-    case GDK_KEY_i:
-    case GDK_KEY_I:
-        if (event->state & GDK_CONTROL_MASK) {
-            g_print("-ctrl i");
-            showExifDialog(TRUE);
-        }
-        break;   
     case GDK_KEY_c:
     case GDK_KEY_C:
-        if (event->state & GDK_CONTROL_MASK) {
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
             g_print("-ctrl c");
             copyToDialog();
         }
         break; 
     case GDK_KEY_f:
     case GDK_KEY_F:
-        if (event->state & GDK_CONTROL_MASK) {
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
             g_print("-ctrl f");
             showSearchBarCB(searchBar,NULL);
         }
         break; 
     case GDK_KEY_o:
     case GDK_KEY_O:
-        if (event->state & GDK_CONTROL_MASK) {
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
             newFocus=whichPhotoHasTheFocus();
             GdkWindow *gdkWindow=gtk_widget_get_window(pWindow);
             GdkScreen *gdkScreen=gdk_window_get_screen(gdkWindow);
             int monitor=gdk_screen_get_monitor_at_window(gdkScreen, gdkWindow);
             if (newFocus!=-1) photoViewerInit(GTK_WINDOW(pWindow), newFocus, monitor);   //double click callback : launch new screen with the photo 
         }
-        break;             
+        break;  
+    case GDK_KEY_q:
+    case GDK_KEY_Q: //let OSX quits the app
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {return FALSE;}
+		break; 
+    case GDK_KEY_BackSpace:
+    case GDK_KEY_Delete: g_print("-delete");deleteDialog(); break;          
     case GDK_KEY_Home: g_print("-home");changeFocus(0,TOP,TRUE);break;
     case GDK_KEY_End: g_print("-end");changeFocus(photoArray->len-1,BOTTOM,TRUE); break;
     case GDK_KEY_Page_Up: g_print("-page_up");return FALSE;//pour laisser le scroll monter - event processed by 
     case GDK_KEY_Page_Down: g_print("-page_down");return FALSE;
-    case GDK_KEY_Delete: g_print("-delete");deleteDialog(); break;
     case GDK_KEY_F1: g_print("-F1"); helpCB(NULL,NULL,NULL); break;
     case GDK_KEY_F5: g_print("-F5"); refreshPhotoWall(NULL,NULL); break;
     }
@@ -998,7 +1032,13 @@ void changeFocus(int index, ScrollType type, int clearSelection){
                 gtk_widget_grab_focus(pPhotoObj->pEventBox);
                 //select also the relative folder
                 RowObj *rowObj=g_ptr_array_index(rowArray,pPhotoObj->row);
-                if (rowObj->idNode!=treeIdNodeSelected) {
+                //Bugfixing if the treeview selection is lost, reset one
+                GtkTreeSelection *selection=gtk_tree_view_get_selection (GTK_TREE_VIEW(pTree));
+                GtkTreeIter iter;
+                GtkTreeModel *model;
+                gboolean hasTreeSelection=gtk_tree_selection_get_selected (selection, &model, &iter);  
+                if (!hasTreeSelection) g_print("\nTree selection lost\n");
+                if (rowObj->idNode!=treeIdNodeSelected || !hasTreeSelection) {
                     //first check if the folder treeIdNodeSelected is empty and idnode is a children
                     scSelectFolder(rowObj->idNode);
                 }
@@ -1438,14 +1478,14 @@ static int treeNewSelectionCB (gpointer user_data){
     if (rowArray->len ==0) return -1; //no photos in photosrootdir
     static int lastSelection=-1;
     if (lastSelection == treeIdNodeSelected) {
-        //TODO photosDir become useless photosDir=treeDirSelected;   
+        //Bug fixing we no more expand the treeview directly because we have side effect when we collapse a folder
         //expand the treeview to the first children to be more direct and give more visibility
-        GtkTreePath *treePath=getTreePathFromidNode(treeIdNodeSelected,NULL);
+        /*GtkTreePath *treePath=getTreePathFromidNode(treeIdNodeSelected,NULL);
         if (treePath) {
             gtk_tree_view_expand_row (GTK_TREE_VIEW(pTree), treePath, FALSE);
             hideSearchBtn(treePath); //disable search btn if the user click another folder
             gtk_tree_path_free(treePath);
-        }
+        }*/
         
         if (!interruptLoading) {
             //scrollTo the right location in the photowall
@@ -1608,7 +1648,6 @@ static void searchNodes(const char *searchingText, GtkTreeIter *parent){
         char *name=g_strdup(_name);
         name=lower(g_str_to_ascii(name,NULL));
         if (strstr(name, translatedSearchingText) != NULL) { //case insensitive comparison
-            //g_print("\nfound%s\n",name); to debug
             g_ptr_array_add(searchRes,gtk_tree_model_get_path(pSortedModel, &iter)); //add the found treePath to the searchRes
         } //before I got a else here 
         if (gtk_tree_model_iter_has_child (pSortedModel, &iter)){
@@ -2306,7 +2345,12 @@ static void scCreateNewThumbnails(void){
     GdkPixbuf *pBuffer1;
     for(int i=0;i<scNewThumbnails2Create->len;i++){
         PhotoObj *newThumbnail=g_ptr_array_index(scNewThumbnails2Create,i);
-        int resCreate=createThumbnail(newThumbnail->fullPath,newThumbnail->idNode, thumbnailDir, PHOTO_SIZE);
+        #if defined(LINUX) || defined(WIN)
+    	int _size=PHOTO_SIZE;
+    	#else 
+    	int _size=PHOTO_SIZE*2;
+    	#endif
+        int resCreate=createThumbnail(newThumbnail->fullPath,newThumbnail->idNode, thumbnailDir, _size);
         gchar *fullPathThumbnail =g_strdup_printf ("%s/%i",thumbnailDir,newThumbnail->idNode);
         if (resCreate == PASSED_CREATED){
             pBuffer1 = gdk_pixbuf_new_from_file_at_size(fullPathThumbnail,PHOTO_SIZE,PHOTO_SIZE,NULL);
@@ -2413,7 +2457,7 @@ static int scHideMessageWait(gpointer user_data){
 }
 
 /*
-In the changefocus function we check if the directory of the focused photo has changed. In the case, we select the new directory in the treeview. 
+In the changefocus function we check if the directory of the focused photo has changed. In this case, we select the new directory in the treeview. 
 */
 static void scSelectFolder(int idNode){
     while (gtk_events_pending ()) gtk_main_iteration(); //consume all the events before doing the select
@@ -2472,7 +2516,10 @@ static void createMenuTree(void){
 
     gtk_widget_show_all(pMenuTree);
     
-    g_signal_connect (G_OBJECT (pTree),"button-press-event",G_CALLBACK (clickTreeCB), NULL); //click on image   
+    g_signal_connect (G_OBJECT (pTree),"button-press-event",G_CALLBACK (clickTreeCB), NULL);
+    g_signal_connect (G_OBJECT (pTree),"test-expand-row",G_CALLBACK (expandCollapseTreeCB), NULL);
+    g_signal_connect (G_OBJECT (pTree),"test-collapse-row",G_CALLBACK (expandCollapseTreeCB), NULL);
+
 }
 
 
@@ -2491,8 +2538,9 @@ static gboolean clickTreeCB(GtkWidget *event_box, GdkEventButton *event, gpointe
             #endif            
         } else {
             //scroll to the first photo of the folder if we re-click on a selected folder (not handled by treeSelectionChangedCB)
-            //Produces bug when we click expand or reduce icon so we remove this feature
-            /*GtkTreeSelection *selection=gtk_tree_view_get_selection (GTK_TREE_VIEW(pTree));
+            //used to issue bug when we click expand or reduce icon but fixed with expandCollapseTreeCB
+            expandCollapseTreePending=FALSE;
+            GtkTreeSelection *selection=gtk_tree_view_get_selection (GTK_TREE_VIEW(pTree));
             GtkTreeIter iter;
             GtkTreeModel *model;
             int _treeIdNodeSelected;
@@ -2500,13 +2548,33 @@ static gboolean clickTreeCB(GtkWidget *event_box, GdkEventButton *event, gpointe
             if (gtk_tree_selection_get_selected (selection, &model, &iter)){
                     gtk_tree_model_get (model, &iter, ID_NODE, &_treeIdNodeSelected, -1); 
                     if (treeIdNodeSelected==_treeIdNodeSelected){
-                        //g_print("reclick on the same folder");
-                        //treeNewSelectionCB(NULL); //we force the selection change
+                        gdk_threads_add_timeout(400,reClickSameFolder, NULL);                        
                     }
-            }*/
+            }
         }
     }
     return FALSE; // continue event handling
+}
+
+/*
+check expand collapse context
+*/
+static gboolean expandCollapseTreeCB (GtkTreeView *tree_view, GtkTreeIter *iter, GtkTreePath *path, gpointer user_data){
+    g_print("expand-collapse");
+    expandCollapseTreePending=TRUE;
+    return FALSE;
+}
+
+/*
+delayed to wait for expandCollapse event
+*/
+static int reClickSameFolder(gpointer user_data){
+    if (!expandCollapseTreePending){
+        expandCollapseTreePending=FALSE;
+        g_print("reclick on the same folder");
+        treeNewSelectionCB(NULL); //we force the selection change
+    }
+    return FALSE; //stop repetition
 }
 
 void refreshPhotoWall(GtkWidget* widget, gpointer data){
@@ -2573,7 +2641,9 @@ static void createPopupMenu(void){
     
     //get the app that can use mime type and create submenu with them
     pSubMenu = gtk_menu_new();
-    listApp=g_app_info_get_all_for_type("image/jpeg");
+    
+    #ifdef LINUX
+    listApp=g_app_info_get_all_for_type("image/jpeg"); //LINUX uses mime types
     //add open a new terminal with echo photoname and cd in the dir of the photo
     appInfo = g_app_info_create_from_commandline("echo toto",
                                              "Terminal",
@@ -2585,16 +2655,40 @@ static void createPopupMenu(void){
                                              G_APP_INFO_CREATE_NEEDS_TERMINAL,
                                              NULL);
     listApp=g_list_insert (listApp, appInfo, 1);
+    
+    #elif OSX    
+    listApp=g_app_info_get_all_for_type("public.jpeg"); //OSX uses UTI names
+    
+    char *appExe=g_strdup_printf("%s","Terminal");
+    pMenuItem = gtk_menu_item_new_with_label(appExe);
+    gtk_menu_shell_append(GTK_MENU_SHELL(pSubMenu), pMenuItem);
+    g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(openWithCB),appExe);
+    
+    appExe=g_strdup_printf("%s","Google Maps");
+    pMenuItem = gtk_menu_item_new_with_label(appExe);
+    gtk_menu_shell_append(GTK_MENU_SHELL(pSubMenu), pMenuItem);
+    g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(openWithCB),appExe);
+        
+    #elif WIN
+    //TODO
+    #endif
+    
     for (l = listApp; l != NULL; l = l->next){
         appInfo = l->data;
         //g_print("%s",g_app_info_get_name(appInfo));
         pMenuItem = gtk_menu_item_new_with_label(g_app_info_get_name(appInfo));
         gtk_menu_shell_append(GTK_MENU_SHELL(pSubMenu), pMenuItem);
+        
+        #ifdef LINUX
         g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(openWithCB),appInfo);
+        #elif OSX
+        g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(openWithCB),g_app_info_get_name(appInfo));
+        #elif WIN
+        //TODO
+        #endif
     }
 
-    pMenuItem = gtk_menu_item_new_with_label("Open With");
-    
+    pMenuItem = gtk_menu_item_new_with_label("Open With");  
     gtk_menu_shell_append(GTK_MENU_SHELL(pMenuPopup), pMenuItem);
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(pMenuItem), pSubMenu);   
     
@@ -2651,7 +2745,15 @@ static void createPopupMenu(void){
 
 static void openWithCB(GtkWidget* widget, gpointer data){
     g_print("openWithCB");
+    #ifdef LINUX
     GAppInfo *appInfo=data;
+    char *appName=g_app_info_get_name(appInfo);
+    #elif OSX
+    char *appName=data;
+    #elif WIN
+    //TODO
+    #endif
+    
     GList *l=NULL;
     if (activeWindow == VIEWER) {
         GFile *pFile=g_file_new_for_path (viewedFullPath);
@@ -2666,7 +2768,7 @@ static void openWithCB(GtkWidget* widget, gpointer data){
             }
         }
     }
-    if (g_strcmp0(g_app_info_get_name(appInfo),"Terminal") == 0) {
+    if (g_strcmp0(appName,"Terminal") == 0) {
         //copy the filename in the clipboard
         GFile *pFile = g_list_first(l)->data;
         char *dirName=g_path_get_dirname(g_file_get_path(pFile));
@@ -2685,24 +2787,21 @@ static void openWithCB(GtkWidget* widget, gpointer data){
         //TODO can we check that gnome-terminal exists???
         char *cmd=g_strdup_printf("gnome-terminal --working-directory=\"%s\"",dirName);
         #elif OSX
-        //TODO test the command on mac
-        char *cmd="open -a Terminal"; //lance un terminal et l'execution du fichier le suivant, il n'admet pas de paramètres 
-        // je n'ai pas trouvé comment changer le working dir du terminal avec un attribut
-        //sh -c "cd xxx" ne marche pas avec un nouvel ecran
+        char *cmd=g_strdup_printf("open -a Terminal \"%s\"",dirName); //lance un terminal dans le current Dir 
         #elif WIN
         //TODO write the command
         #endif
         system(cmd);
         g_free(dirName);
         g_string_free(fileList, TRUE  );
-    }   else if (g_strcmp0(g_app_info_get_name(appInfo),"Google Maps") == 0){
+    }   else if (g_strcmp0(appName,"Google Maps") == 0){
         g_print("google maps\n");
         char *gps=showExifDialog(FALSE); //gps data are reformatted to fit to google maps
         if (gps!=NULL){ 
         #ifdef LINUX
             char *cmd = g_strdup_printf("xdg-open \"http://www.google.com/maps/place/%s\"",g_strescape(gps,"°")); 
         #elif OSX
-            char *cmd =g_strdup_printf ("echo google maps not supported on OSX.");
+            char *cmd =g_strdup_printf ("open \"http://www.google.com/maps/place/%s\"",g_strescape(gps,"°"));
         #elif WIN
             char *cmd =g_strdup_printf ("echo google maps not supported on windows.");
         #endif
@@ -2712,22 +2811,44 @@ static void openWithCB(GtkWidget* widget, gpointer data){
         } else {
             updateStatusMessage("No GPS data in the photo!");
         }
-    }   else
-        g_app_info_launch (appInfo,l, NULL, NULL);
+    }   else {
+        	#ifdef LINUX
+        	g_app_info_launch (appInfo,l, NULL, NULL);
+        	#elif OSX
+        	GFile *pFile = g_list_first(l)->data;
+        	GString *fileList= g_string_new(NULL);
+        	while (l != NULL)   {
+            	pFile=l->data;
+            	g_string_append_printf(fileList," \"%s\"", g_file_get_path(pFile));
+            	l = l->next;
+        	}
+        	char *cmd =g_strdup_printf ("open -a \"%s\" %s",appName, fileList->str); 
+        	g_spawn_command_line_async (cmd, NULL);
+            g_free(cmd);
+        	#elif WIN
+        	#endif
+        }
 }
-//Command_line_arguments_ compliant with geary or thunderbird
+//Command_line_arguments_ compliant with geary or thunderbird in LINUX
 //xdg-email --attach "/home/leon/Cloud Pictures/2003-08equihen/DSCN0282.JPG"
+//in OSX 
+//open -a Mail "/Users/leon/Pictures/BestOf 2016/20161118_135005.jpg"
 static void mailToCB(GtkWidget* widget, gpointer data){
     g_print("mailToCB");
     gchar *cmd;
     GString *fileList=g_string_new(NULL);
+    #ifdef LINUX
+    gchar * prefix= "--attach ";
+	#elif OSX  
+    gchar * prefix= "";
+    #endif
     if (activeWindow == VIEWER) { 
-        g_string_append_printf(fileList," --attach \"%s\"",viewedFullPath);
+        g_string_append_printf(fileList," %s\"%s\"",prefix, viewedFullPath);
     }
     if (activeWindow == ORGANIZER) {
         for (int i=0;i<photoArray->len; i++){
             PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,i);
-            if (pPhotoObj!=NULL && pPhotoObj->selected) g_string_append_printf(fileList," --attach \"%s\"",pPhotoObj->fullPath);
+            if (pPhotoObj!=NULL && pPhotoObj->selected) g_string_append_printf(fileList," %s\"%s\"",prefix,pPhotoObj->fullPath);
         }
     }
     if (fileList->str!=NULL){     //min 1 selected
@@ -2735,7 +2856,7 @@ static void mailToCB(GtkWidget* widget, gpointer data){
         //tested with geary and thunderbird
         cmd = g_strdup_printf("xdg-email %s",fileList->str); // xdg-email --attach \"%s\" 
     #elif OSX
-        cmd =g_strdup_printf ("echo mailto no supported on OSX.");
+        cmd =g_strdup_printf ("open -a Mail %s",fileList->str); 
     #elif WIN
         cmd =g_strdup_printf ("echo mailto no supported on windows.");
     //TODO
@@ -2750,7 +2871,6 @@ static void mailToCB(GtkWidget* widget, gpointer data){
 Replace Update Date by exif date 
 */
 static void changeFileDateWithExif(void){
-    #ifdef LINUX
     gchar *firstFullPath=NULL;
     GError *err = NULL;
     gchar *stdOut = NULL;
@@ -2804,9 +2924,7 @@ static void changeFileDateWithExif(void){
     }
     g_string_free(fileList,TRUE);
     g_free(cmd);
-    #elif OSX
-    #elif WIN
-    #endif
+    //TODO WIN SPECIAL
 }
 
 static void deleteMenu(void){
@@ -2836,11 +2954,15 @@ static void whatsappCB(GtkWidget* widget, gpointer data){
     if (fullPath!=NULL){ 
     //put the fullPath in the clipboard, very usefull to attach the photo to a new message (ctrl V in the Upload Dialog)
     GtkClipboard *clipBoard = gtk_clipboard_get (gdk_atom_intern ("CLIPBOARD",TRUE));
+    #ifdef OSX
+    gtk_clipboard_set_text (clipBoard, g_path_get_basename(fullPath), -1);  //in OSX only the filename can be used in the search input
+    #else
     gtk_clipboard_set_text (clipBoard, fullPath, -1);
+    #endif
     #ifdef LINUX
         cmd = g_strdup_printf("xdg-open http://web.whatsapp.com"); 
     #elif OSX
-        cmd =g_strdup_printf ("echo whatsapp not supported on OSX.");
+        cmd =g_strdup_printf ("open http://web.whatsapp.com");
     #elif WIN
         cmd =g_strdup_printf ("echo whatsapp not supported on windows.");
     #endif
@@ -2871,11 +2993,15 @@ static void facebookCB(GtkWidget* widget, gpointer data){
     if (fullPath!=NULL){ 
     //put the fullPath in the clipboard, very usefull to attach the photo to a new message (ctrl V in the Upload Dialog)
     GtkClipboard *clipBoard = gtk_clipboard_get (gdk_atom_intern ("CLIPBOARD",TRUE));
+    #ifdef OSX
+    gtk_clipboard_set_text (clipBoard, g_path_get_basename(fullPath), -1);  //in OSX only the filename can be used in the search input
+    #else
     gtk_clipboard_set_text (clipBoard, fullPath, -1);
-    #ifdef LINUX
+    #endif
+	#ifdef LINUX
         cmd = g_strdup_printf("xdg-open http://www.facebook.com"); 
     #elif OSX
-        cmd =g_strdup_printf ("echo facebook not supported on OSX.");
+        cmd =g_strdup_printf ("open http://www.facebook.com");
     #elif WIN
         cmd =g_strdup_printf ("echo facebook not supported on windows.");
     #endif

@@ -74,13 +74,16 @@ void photoViewerInit(GtkWindow *parent, int index, int monitor){
     #ifdef OSX
     //bug with gtk_window_fullscreen on mac osx
     gtk_window_set_default_size(GTK_WINDOW(pWindow),getMonitorWidth(parentWindow), getMonitorHeight(parentWindow));
+    gtk_window_fullscreen(GTK_WINDOW(pWindow)); //fullscreen
+    //gtk_window_set_keep_above(GTK_WINDOW(pWindow), TRUE);
+
 	#else
     //manage monitor number we change the location of the viewer to put it in the same monitor
     //we have to move the window to the position of the new monitor before doing fullscreen
     GdkRectangle rect;    
     gdk_screen_get_monitor_geometry(screen, monitor, &rect); //we use this function to be compliant with gtk-3.18    
     g_print("\nmonitor%i rectX %i rectY%i\n",monitor, rect.x, rect.y);
-    gtk_window_move (GTK_WINDOW(pWindow), rect.x, rect.y);    
+    gtk_window_move (GTK_WINDOW(pWindow), rect.x, rect.y);
 	gtk_window_fullscreen(GTK_WINDOW(pWindow)); //fullscreen
 	#endif
     //css init
@@ -337,7 +340,7 @@ static gboolean windowKeyCB(GtkWidget *widget,  GdkEventKey *event) {
     GAppInfo *appInfo;
     
     gtk_widget_hide(pStatusMessage); //reset the message status before action
-    
+
     switch (event->keyval) {
     case GDK_KEY_Up:
     case GDK_KEY_Left:
@@ -389,6 +392,9 @@ static gboolean windowKeyCB(GtkWidget *widget,  GdkEventKey *event) {
         break;
     case GDK_KEY_Escape:
         g_print("-escape");
+        #ifdef OSX
+        gtk_window_unfullscreen(GTK_WINDOW(pWindow));
+        #endif
         removeAllWidgets(GTK_CONTAINER(widget)); //we clean the content of the window
         gtk_widget_destroy(widget);//we destroy the window
         break;
@@ -399,30 +405,40 @@ static gboolean windowKeyCB(GtkWidget *widget,  GdkEventKey *event) {
             break;
         }    
         g_print("-return");
+        #ifdef OSX
+        gtk_window_unfullscreen(GTK_WINDOW(pWindow));
+        #endif
         removeAllWidgets(GTK_CONTAINER(widget)); //we clean the content of the window
         gtk_widget_destroy(widget);//we destroy the window
         break;
+    case GDK_KEY_i:
+    case GDK_KEY_I: //OSX shortcut
+        if (event->state & GDK_META_MASK) {
+            g_print("-alt return");
+            showExifDialog(TRUE);
+        }
+        break;
     case GDK_KEY_equal:        
-        if (event->state & GDK_CONTROL_MASK) {
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
             g_print("ctrl plus ");
             zoomPhoto(ZOOM_IN);
         }
         break;    
     case GDK_KEY_plus:        
-        if (event->state & GDK_CONTROL_MASK) {
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
             g_print("ctrl plus ");        
             zoomPhoto(ZOOM_IN);
         }
         break;
     case GDK_KEY_minus:        
-        if (event->state & GDK_CONTROL_MASK) {
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
             g_print("ctrl minus ");
             zoomPhoto(ZOOM_OUT);        
         }
         break;
     case GDK_KEY_c:
     case GDK_KEY_C:
-        if (event->state & GDK_CONTROL_MASK) {
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
             g_print("-ctrl c");
             copyToDialog();
         }
@@ -434,7 +450,7 @@ static gboolean windowKeyCB(GtkWidget *widget,  GdkEventKey *event) {
         break;
     case GDK_KEY_o:
     case GDK_KEY_O:
-        if (event->state & GDK_CONTROL_MASK) {
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
             g_print("-ctrl o");
             //on ouvre le context menu 
             gtk_menu_popup (GTK_MENU(pMenuPopup), NULL, NULL, NULL, NULL, 0, event->time);//gtk-3.18
@@ -442,6 +458,7 @@ static gboolean windowKeyCB(GtkWidget *widget,  GdkEventKey *event) {
         }
         break;   
     case GDK_KEY_Delete:
+    case GDK_KEY_BackSpace:
         deleteInViewer();
         break;
     }   
@@ -560,7 +577,7 @@ static gboolean  windowPressCB (GtkWidget *widget, GdkEventButton *event, gpoint
 When the window is closing 
 */
 static void windowDestroyCB(GtkWidget *pWidget, gpointer pData){
-	g_print("window distroyed");
+	g_print("\nwindow distroyed\n");
     activeWindow=ORGANIZER; //we set it here, too late in photoorganizer.c 
 	zoomScale=1.0f;
 

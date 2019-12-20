@@ -1,0 +1,38 @@
+{
+    "app-id": "org.pwall.Pwall",
+    "runtime": "org.gnome.Platform",
+    "runtime-version": "3.24",
+    "sdk": "org.gnome.Sdk",
+    "command": "pwall",
+    "modules": [
+      {
+          "name": "pwall",
+          "buildsystem": "simple",
+          "build-commands": [
+		"install -D res/application/pwall.desktop /app/share/applications/org.pwall.Pwall.desktop",
+		"install -D res/pwall/pwall.png /app/share/icons/hicolor/128x128/apps/org.pwall.Pwall.png",
+                "install -D res/pwall/help.html /app/extra/export/share/help.html",
+                "install -D res/pwall/noimage.png /app/extra/export/share/noimage.png",
+		"install -D res/pwall/clearbackup.sh /app/extra/export/share/clearbackup.sh",
+                "make -f makefile-flatpak",
+		"install -D pwall /app/bin/pwall",
+		"install -D flatpak/jhead /app/bin/jhead"
+            ],
+          "sources": [
+              {
+              "type": "git",
+              "url": "https://github.com/ltiber/pwall.git"
+              },
+              {
+               "type": "file",
+               "path": "/home/leon/soft/gnome/pwall/flatpak/makefile-flatpak"
+              }    
+          ]
+      }
+  ],
+    "finish-args": [
+     "--socket=x11",
+     "--share=network",
+     "--filesystem=host"
+    ]
+}
