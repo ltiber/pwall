@@ -9,7 +9,7 @@
           "name": "pwall",
           "buildsystem": "simple",
           "build-commands": [
-		"install -D res/application/pwall.desktop /app/share/applications/org.pwall.Pwall.desktop",
+		"install -D flatpak/pwall-flatpak.desktop /app/share/applications/org.pwall.Pwall.desktop",
 		"install -D res/pwall/pwall.png /app/share/icons/hicolor/128x128/apps/org.pwall.Pwall.png",
                 "install -D res/pwall/help.html /app/extra/export/share/help.html",
                 "install -D res/pwall/noimage.png /app/extra/export/share/noimage.png",
