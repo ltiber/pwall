@@ -25,7 +25,7 @@ Installation & Build
 ------------------------
 
 Download the .deb file (release tab). 
-It has been tested in ubuntu 16.04 an 18.04 and has been built
+It has been tested in ubuntu 16.04, 18.04, 20.04 and has been built
 over the GTK 3 framework.\
 To enjoy all the features, you also need to install jhead, ffmpeg and gstreamer libraries\
 with sudo apt install jhead ffmpeg libgstreamer1.0-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-pulseaudio\
