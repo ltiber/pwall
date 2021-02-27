@@ -6,11 +6,18 @@ int  getPhotoSizePNG(const char *filePath, unsigned int *width, unsigned int *he
 int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *height);
 int  getPhotoOrientation(const char *fileName);
 void removeAllWidgets(GtkContainer *pContainer);
-int createThumbnail(const gchar *filePath,const int idNode, const gchar *targetDir, const int size);
+int createThumbnail(const gchar *filePath, const int iDir, const gchar *targetDir, const int size, const long int time);
 int createThumbnail4Dir(const gchar *dirPath,const gchar *targetDir, int size, int (*followupCB)(char *)); //the callback can be null
-int countFilesInDir(const gchar *dirPath, const int isImage); //not in subdir
+gchar *getThumbnailPath(const gchar *_thumbnailDir, const int iDir, const gchar *fullPathFile);
+int countFilesInDir(const gchar *dirPath, const int extSupportedOnly, const gboolean recursive); 
 long int getFileTime(const char *path);
-long int getFileNode(const char *path); 
+void setFileTime(const char *path, long int _time);
+int getFileNode(const char *path);
+float getFileSize(const char *path);
+int isHiddenFile(const gchar *name);
+int hasPhotoExt(const gchar *name);
+int hasVideoExt(const gchar *name);
+int hasExifExt(const gchar *name);
 GPtrArray *getDirSortedByDate(const gchar *dirPath);
 void timeIn(void);
 void timeOut(const char * fileName, const char * event);
@@ -43,4 +50,4 @@ typedef struct FileObj {
 	long int time;
 } FileObj;
 
-enum {ERR_THUMBNAIL_ALREADY_EXIST, ERR_FILE_NOT_VALID, ERR_PIXBUF, ERR_THUMBNAIL_SAVE, PASSED_CREATED};
+enum {ERR_THUMBNAIL_ALREADY_EXIST, ERR_FILE_NOT_VALID, ERR_PIXBUF, ERR_THUMBNAIL_SAVE, ERR_FFMPEGTHUMBNAILER_DOESNT_EXIST, PASSED_CREATED};

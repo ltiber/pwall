@@ -1,92 +1,59 @@
-//photoViewer.c
-//This source show the photo in fullscreen
-//you can navigate directly to the next or the previous photo of the current dir but also if you get to the first photo of a dir, go to the last photo of the previous dir. You are not limited to the current dir.
-//You can also zoom in and out the photo.
-//You can trigger actions to the photo file as you do in the photoorganizer (copy, delete, share, change date...)
-//to compile see gcc in photoOrganizer.c
+/*photoViewer.c
+This source will be called by MultiViewer.c .
+if the media is a photo.
+photoWidgetInit will create the widget structure to display the photo
+photoWidgetLoad will find, load, add the photo to the widget structure.
+it handles zoom, delete, move features.
+*/
 
 #include <stdlib.h>
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
 #include <tsoft.h>
 #include <photoOrganizer.h>
+#include <multiViewer.h>
 #include <photoViewer.h>
 #include <photoDialogs.h>
-#include <photoInit.h>
 
 typedef enum ZoomType {
 	ZOOM_IN,ZOOM_OUT
 }ZoomType;
 
-//private global function
-static int addPhoto2Viewer(int index);
-static void windowDestroyCB(GtkWidget *pWidget, gpointer pData);
-static gboolean windowKeyCB(GtkWidget *widget,  GdkEventKey *event);
-static gboolean  windowPressCB (GtkWidget *widget, GdkEventButton *event, gpointer data);
-static void zoomPhoto(ZoomType type);
-static gboolean  scrolledPanelChangedCB (GtkAdjustment  *pAdjustment ,  gpointer data);
-static gboolean  windowMapCallBack (GtkWidget *widget, GdkEvent *event, gpointer data) ;
-static int getPrevious(int index);
-static int getNext(int index);
-static void chooserSelectionCB (GtkAppChooserWidget *self,    GAppInfo   *application, gpointer  user_data);
-static void chooserActivationCB (GtkAppChooserWidget *self,    GAppInfo   *application, gpointer  user_data);
 
-//private global var
+static  gulong winViewer4PhotoKeyHandler; // key input in the window
+static  gulong winViewer4PhotoClickHandler; //click the window
 static GtkWidget *pBoxViewWindow;
 static GtkWidget *pImage;
 static float zoomScale=1.0f; //used for crl+ and ctrl-
-static GtkWidget *pWindow, *pStatusMessage;
-GtkWidget *pWindowViewer;
-static int viewedPhotoIndex;  //index is the place of the photo in the CURRENT FOLDER 
-static int viewedPhotoRow; //index in rowArray
-static int viewedPhotoDirNode;
-static GPtrArray *fileSet= NULL; //used in ALL organizer type, filled with the current folder
-static int initPhotoIndex;
-static GtkWidget *parentWindow;
-//public function are declared in the header
-
-//public global var
-char *viewedFullPath; //full path of the current photo
-int organizerNeed2BeRefreshed=FALSE; //to call refreshArray when we destroy the viewer
 
 
-void photoViewerInit(GtkWindow *parent, int index, int monitor){
-    initPhotoIndex=index;
-    parentWindow=GTK_WIDGET(parent);
-    //add pWindow
-    //pWindow = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    pWindow = gtk_application_window_new(app);
+static gboolean winViewer4PhotoClickCB (GtkWidget *widget, GdkEventButton *event, gpointer data);
+static gboolean winViewer4PhotoKeyCB(GtkWidget *widget,  GdkEventKey *event);
+static void zoomPhoto(ZoomType type);
+static gboolean  scrolledPanelChangedCB (GtkAdjustment  *pAdjustment ,  gpointer data);
 
-    pWindowViewer=pWindow; //for sharing
-    g_signal_connect(G_OBJECT(pWindow), "destroy", G_CALLBACK(windowDestroyCB), NULL); 
-    g_signal_connect(G_OBJECT(pWindow), "key-press-event", G_CALLBACK(windowKeyCB), NULL);
-    gtk_widget_set_events (pWindow, GDK_BUTTON_PRESS_MASK );
-	gtk_window_set_title(GTK_WINDOW(pWindow),  "");
-	gtk_window_set_decorated(GTK_WINDOW(pWindow),FALSE);  //no window border 
-    gtk_window_set_skip_taskbar_hint (GTK_WINDOW(pWindow),TRUE);  //to avoid multi windows in the app manager
-    gtk_window_set_modal (GTK_WINDOW(pWindow),TRUE);
-    gtk_window_set_transient_for (GTK_WINDOW(pWindow), parent);
-    g_signal_connect(G_OBJECT(pWindow),"map-event",G_CALLBACK(windowMapCallBack), NULL);
-     
+
+
+//connect the handler to the multiViewer Window for photo display features
+void connectWinPhotoHandler(){
+    winViewer4PhotoKeyHandler=g_signal_connect(G_OBJECT(winViewer), "key-press-event", G_CALLBACK(winViewer4PhotoKeyCB), NULL);
+    winViewer4PhotoClickHandler=g_signal_connect (G_OBJECT(winViewer),"button-press-event",G_CALLBACK (winViewer4PhotoClickCB), NULL);  
+}
+
+//remove the connection the handler to the multiViewer Window for further connections
+void disconnectWinPhotoHandler(){
+    g_signal_handler_disconnect(G_OBJECT(winViewer), winViewer4PhotoKeyHandler);
+    g_signal_handler_disconnect(G_OBJECT(winViewer), winViewer4PhotoClickHandler);
+}    
+
+/*
+create the widget structure to display the photo
+*/
+void photoWidgetInit(){
+    //css init
     GdkDisplay *display = gdk_display_get_default ();
     GdkScreen *screen = gdk_display_get_default_screen (display);
-    
-    #ifdef OSX
-    //bug with gtk_window_fullscreen on mac osx
-    gtk_window_set_default_size(GTK_WINDOW(pWindow),getMonitorWidth(parentWindow), getMonitorHeight(parentWindow));
-    gtk_window_fullscreen(GTK_WINDOW(pWindow)); //fullscreen
-    //gtk_window_set_keep_above(GTK_WINDOW(pWindow), TRUE);
 
-	#else
-    //manage monitor number we change the location of the viewer to put it in the same monitor
-    //we have to move the window to the position of the new monitor before doing fullscreen
-    GdkRectangle rect;    
-    gdk_screen_get_monitor_geometry(screen, monitor, &rect); //we use this function to be compliant with gtk-3.18    
-    g_print("\nmonitor%i rectX %i rectY%i\n",monitor, rect.x, rect.y);
-    gtk_window_move (GTK_WINDOW(pWindow), rect.x, rect.y);
-	gtk_window_fullscreen(GTK_WINDOW(pWindow)); //fullscreen
-	#endif
-    //css init
     GtkCssProvider *provider = gtk_css_provider_new ();
     gtk_style_context_add_provider_for_screen (screen, GTK_STYLE_PROVIDER (provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION); 
     
@@ -101,7 +68,7 @@ void photoViewerInit(GtkWindow *parent, int index, int monitor){
 	
     //add 2 layers overlay to managed a status message 
     GtkWidget *pMainOverlay = gtk_overlay_new ();
-    gtk_container_add(GTK_CONTAINER(pWindow), pMainOverlay);
+    gtk_container_add(GTK_CONTAINER(winViewer), pMainOverlay);
 	
 	//add scrolled panel for layer 1
     GtkWidget *pScrolledWindow = gtk_scrolled_window_new (NULL, NULL);
@@ -118,70 +85,55 @@ void photoViewerInit(GtkWindow *parent, int index, int monitor){
 	
 	GtkWidget *pVBox=gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);	
 	gtk_container_add(GTK_CONTAINER(pScrolledWindow), pVBox);
-		
+	//the boxViewWindow manages the photo to display
 	pBoxViewWindow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 	gtk_widget_set_name(pBoxViewWindow,"boxViewWindow");
     gtk_box_pack_start(GTK_BOX(pVBox), pBoxViewWindow, TRUE, TRUE, 0);
-    
-    //get the PhotoObj
-    PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,index);    
-    
-    g_print("viewer row %i\n",pPhotoObj->row);
-    RowObj *row=g_ptr_array_index(rowArray,pPhotoObj->row);
-    viewedPhotoDirNode=row->idNode;
-    viewedPhotoIndex=row->index+pPhotoObj->col;
-    viewedPhotoRow=pPhotoObj->row;
-    char *currentDir= getFullPathFromidNode(viewedPhotoDirNode, NULL);
-    g_print("current dir =%s",currentDir);
-    fileSet=getDirSortedByDate(currentDir); 
-    
-    //add image
-	int ret=addPhoto2Viewer(viewedPhotoIndex);
-	
-	//add error if necessary
-	if (!ret){
-	    GtkWidget *pLabel1=gtk_label_new("Sorry, an error happens!");
-        gtk_box_pack_start(GTK_BOX(pBoxViewWindow), pLabel1, TRUE, TRUE, 0);
-	}
-
-    //add the status message - layer 2
-    pStatusMessage=gtk_label_new("                   ");
-    gtk_widget_set_halign(pStatusMessage,GTK_ALIGN_END);
-    gtk_widget_set_valign(pStatusMessage,GTK_ALIGN_END);
-    //gtk_label_set_selectable (GTK_LABEL(pStatusMessage),TRUE);
-    gtk_widget_set_name(pStatusMessage,"statusMessage");
-    gtk_overlay_add_overlay (GTK_OVERLAY (pMainOverlay), pStatusMessage); 
-    gtk_overlay_set_overlay_pass_through (GTK_OVERLAY(pMainOverlay),pStatusMessage,TRUE);
-    gtk_widget_set_no_show_all (pStatusMessage, TRUE);
-    
-    gtk_widget_show_all(pWindow);        
+   //add the status message - layer 2
+    statusMessageViewer=gtk_label_new("                   ");
+    gtk_widget_set_halign(statusMessageViewer,GTK_ALIGN_END);
+    gtk_widget_set_valign(statusMessageViewer,GTK_ALIGN_END);
+    //gtk_label_set_selectable (GTK_LABEL(statusMessageViewer),TRUE);
+    gtk_widget_set_name(statusMessageViewer,"statusMessage");
+    gtk_overlay_add_overlay (GTK_OVERLAY (pMainOverlay), statusMessageViewer); 
+    gtk_overlay_set_overlay_pass_through (GTK_OVERLAY(pMainOverlay),statusMessageViewer,TRUE);
+    gtk_widget_set_no_show_all (statusMessageViewer, TRUE);
+    //reset the zoom scale
+    zoomScale=1.0f;
 }
 
 /*
- find the photo, create the widget and attach it to the gtk container
+ find, load, add the photo to the photowidget
 */
-static int addPhoto2Viewer(int index){
+int photoWidgetLoad(int index){
     GError *err = NULL;
     GdkPixbufLoader *loader=NULL;
     int ret=FALSE;
     if (viewedFullPath!=NULL) g_free(viewedFullPath);
     //get the PhotoObj
-    FileObj *fileObj=g_ptr_array_index(fileSet,index);
-    char *currentDir=getFullPathFromidNode(viewedPhotoDirNode,NULL);
+    FileObj *fileObj=g_ptr_array_index(viewedFileSet,index);
+    char *currentDir=getFullPathFromidNode(viewedDirNode,NULL);
     viewedFullPath=g_strdup_printf("%s/%s", currentDir, fileObj->name);
     //retreive screen height and screen width
     /*GdkDisplay *display = gdk_display_get_default ();
     GdkScreen *screen = gdk_display_get_default_screen (display);
     int screenWidth=gdk_screen_get_width (screen);
     int screenHeight=gdk_screen_get_height (screen);*/
-    int screenWidth=getMonitorWidth(parentWindow); //we can't use pWindow because not realized yet
-    int screenHeight=getMonitorHeight(parentWindow);
+    int screenWidth=getMonitorWidth(pWindowOrganizer); //we can't use winViewer because not realized yet
+    int screenHeight=getMonitorHeight(pWindowOrganizer);
 
 	//g_print("screen width%i ,height%i",screenWidth,screenHeight);
 
     //get image width and height
     int imgWidth, imgHeight;
     ret=getPhotoSize(viewedFullPath, &imgWidth, &imgHeight);
+    //debug
+    /*if (!ret) {
+        imgWidth=744;
+        imgHeight=992;
+        ret=TRUE;
+    }*/
+    //enddebug
     g_print("photosize %ix%i",imgWidth,imgHeight);
 	if (!ret) return FALSE;
 	
@@ -260,12 +212,13 @@ static int addPhoto2Viewer(int index){
    }  
     g_object_unref(src);  
     if (rot) g_object_unref(rot);
-    //old version g_free(fileFullPath);
-    
-            
+    //old version g_free(fileFullPath);            
     gtk_box_pack_start(GTK_BOX(pBoxViewWindow), pImage, TRUE, TRUE, 0);
 
+    return TRUE;
 }
+
+
 
 /*
 Give zooming facilities to the photo
@@ -284,11 +237,9 @@ static void zoomPhoto(ZoomType type){
     g_print("-zoomscale%f", zoomScale);
     gtk_widget_destroy(pImage);
 
-    int ret=addPhoto2Viewer(viewedPhotoIndex); 
-	if (!ret){
-	    GtkWidget *pLabel1=gtk_label_new("Sorry, an error happens!");
-        gtk_box_pack_start(GTK_BOX(pBoxViewWindow), pLabel1, TRUE, TRUE, 0);
-	}
+    int ret=photoWidgetLoad(viewedIndex); 
+            
+    if (!ret) updateStatusMessageViewer("Sorry, an error happens loading the photo!");
     
     gtk_widget_show_all(pImage);     
 }
@@ -309,113 +260,50 @@ static gboolean  scrolledPanelChangedCB (GtkAdjustment  *pAdjustment ,  gpointer
 }
 
 /*
-Handle the input keys
+Show the popup menu with ctrl click.
+widget is winViewer
 */
-static gboolean windowKeyCB(GtkWidget *widget,  GdkEventKey *event) {
-    //g_print("-key %s modif%i", gdk_keyval_name (event->keyval), event->is_modifier); // google  gdkkeysyms.h
-    //handle repeat key (to heavy to display image at normal key repeat      
-    static gint64 lastTime=0;
-    static gint lastKeyVal=0;
-    static gint repeatKeyStepMin=250; //in ms
-    gint64 now=g_get_monotonic_time () / 1000;// clock from 1970 in ms
-    if (lastKeyVal!=event->keyval){
-        lastKeyVal=event->keyval;
-        lastTime=now; 
-    } else { //we've got a repeat key
-        if (now-lastTime < repeatKeyStepMin)
-            return FALSE; //no action
-        else 
-            lastTime=now; //action
+static gboolean  winViewer4PhotoClickCB (GtkWidget *widget, GdkEventButton *event, gpointer data)  {
+  //common callback to video and photo
+  if (multiViewerClickCB(widget,event,data)) return FALSE; //no more processing in this function
+    
+  if (event->type == GDK_BUTTON_PRESS){        
+        if (event->button == GDK_BUTTON_SECONDARY || event->state & GDK_CONTROL_MASK)  {
+            g_print("clickright"); //ctrl click for mac support
+            gtk_menu_popup (GTK_MENU(pMenuPopup), NULL, NULL, NULL, NULL, event->button, event->time); //gtk-3.18
+            //gtk_menu_popup_at_pointer(GTK_MENU(pMenuPopup), NULL); //gtk-3.22
+            return TRUE;
+        }
     }
-    
-    int newSelection=-1;    
-    int res=-1;
-    int ret=-1;
-    char *msg;
-    GtkWidget *pLabel;
-    GtkWidget *appChooser;
-    GFile *pFile;
-    GtkWidget *appChooserWidget;
-    GList *listApp, *l;
-    GAppInfo *appInfo;
-    
-    gtk_widget_hide(pStatusMessage); //reset the message status before action
+    return FALSE;
+}
+
+/*
+Handle the input keys of winViewer for photos 
+*/
+static gboolean winViewer4PhotoKeyCB(GtkWidget *widget,  GdkEventKey *event) {
+    //common callback to video and photo
+   if (multiViewerKeyCB(widget, event)) return FALSE; //no more processing in this function
 
     switch (event->keyval) {
-    case GDK_KEY_Up:
-    case GDK_KEY_Left:
-        if (event->state & GDK_CONTROL_MASK) break;
-        res=getPrevious(viewedPhotoIndex);
-        if (res==-1) {
-            updateStatusMessageViewer("You can't go to the left. This is the first photo!");
-            //gtk_widget_show(pStatusMessage);
-            break;
-        } 
-        removeAllWidgets(GTK_CONTAINER(pBoxViewWindow)); //we destroy the image
-        zoomScale=1.0f;
-        /*while ( (res=addPhoto2Viewer(--viewedPhotoIndex))==FALSE || viewedPhotoIndex==0){} //we add a new image
-        if (!res) {
-            pPhotoObj=g_ptr_array_index(photoArray,viewedPhotoIndex);        
-            msg=g_strdup_printf ("Sorry, I can't display this file %s",pPhotoObj->fullPath);        
-            GtkWidget *pLabel =gtk_label_new(msg);
-            gtk_box_pack_start(GTK_BOX(pBoxViewWindow), pLabel, TRUE, TRUE, 0);
-            g_free(msg);
-        }*/
-        viewedPhotoIndex=res;
-        ret=addPhoto2Viewer(viewedPhotoIndex); 
-        if (!ret){
-            GtkWidget *pLabel1=gtk_label_new("Sorry, an error happens!");
-            gtk_box_pack_start(GTK_BOX(pBoxViewWindow), pLabel1, TRUE, TRUE, 0);
-        }
-        gtk_widget_show_all(widget);//we show the image
-        g_print("-left");
-        break;
-    case GDK_KEY_Down:
-    case GDK_KEY_Right: 
-        if (event->state & GDK_CONTROL_MASK) break;
-        res=getNext(viewedPhotoIndex);
-        if (res==-1) {
-            updateStatusMessageViewer("You can't go to the right. This is the last photo!");
-            //gtk_widget_show(pStatusMessage);
-            break;
-        }
-        removeAllWidgets(GTK_CONTAINER(pBoxViewWindow)); //we destroy the image
-        zoomScale=1.0f;
-        viewedPhotoIndex=res;
-        ret=addPhoto2Viewer(viewedPhotoIndex); 
-        if (!ret){
-            GtkWidget *pLabel1=gtk_label_new("Sorry, an error happens!");
-            gtk_box_pack_start(GTK_BOX(pBoxViewWindow), pLabel1, TRUE, TRUE, 0);
-        }
-        gtk_widget_show_all(widget);//we show the image
-        g_print("-right");
-        break;
-    case GDK_KEY_Escape:
-        g_print("-escape");
-        #ifdef OSX
-        gtk_window_unfullscreen(GTK_WINDOW(pWindow));
-        #endif
-        removeAllWidgets(GTK_CONTAINER(widget)); //we clean the content of the window
-        gtk_widget_destroy(widget);//we destroy the window
-        break;
     case GDK_KEY_Return:
         if (event->state & GDK_MOD1_MASK) {
             g_print("-alt return");
-            showExifDialog(TRUE);
+            showPropertiesDialog();
             break;
         }    
         g_print("-return");
         #ifdef OSX
-        gtk_window_unfullscreen(GTK_WINDOW(pWindow));
+        gtk_window_unfullscreen(GTK_WINDOW(winViewer));
         #endif
-        removeAllWidgets(GTK_CONTAINER(widget)); //we clean the content of the window
+        multiViewerWidgetDestroy();
         gtk_widget_destroy(widget);//we destroy the window
         break;
     case GDK_KEY_i:
     case GDK_KEY_I: //OSX shortcut
         if (event->state & GDK_META_MASK) {
             g_print("-alt return");
-            showExifDialog(TRUE);
+            showPropertiesDialog();
         }
         break;
     case GDK_KEY_equal:        
@@ -442,6 +330,13 @@ static gboolean windowKeyCB(GtkWidget *widget,  GdkEventKey *event) {
             g_print("-ctrl c");
             copyToDialog();
         }
+        break;
+    case GDK_KEY_x:
+    case GDK_KEY_X:
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
+            g_print("-ctrl x");
+            moveToDialog();
+        }
         break; 
     case  GDK_KEY_Menu:
         g_print("-key menu");
@@ -464,196 +359,3 @@ static gboolean windowKeyCB(GtkWidget *widget,  GdkEventKey *event) {
     }   
     return FALSE;
 }
-
-//we don't use the delete from photoOrganizer.c because it becomes too complex to play with active window
-void deleteInViewer(void){
-    GtkDialogFlags flags;
-    GtkWidget *dialog;
-    PhotoObj *pPhotoObj;
-    int deleteConfirm;
-    int removeResult;    
-    int res=-1;
-    char *fileFullPath;
-    //get the current PhotoObj
-    FileObj *fileObj=g_ptr_array_index(fileSet,viewedPhotoIndex);
-    char *currentDir=getFullPathFromidNode(viewedPhotoDirNode,NULL);
-    fileFullPath=g_strdup_printf("%s/%s", currentDir, fileObj->name);
-
-    flags = GTK_DIALOG_DESTROY_WITH_PARENT;
-    dialog = gtk_message_dialog_new (GTK_WINDOW(pWindow),flags,
-                            GTK_MESSAGE_WARNING, GTK_BUTTONS_OK_CANCEL,"Do you really want to delete the file %s ?",fileFullPath);
-    gtk_widget_grab_focus(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK)); //set default button
-    deleteConfirm = gtk_dialog_run (GTK_DIALOG (dialog));
-    gtk_widget_destroy (dialog);
-    if (deleteConfirm==GTK_RESPONSE_OK) { 
-        removeResult = remove(fileFullPath);
-        //g_print("remove result %i",removeResult);
-        if(removeResult==0) {           
-            g_print("File deleted successfully %s",fileFullPath);
-            g_ptr_array_remove_index(fileSet,viewedPhotoIndex);
-            viewedPhotoIndex--;
-            organizerNeed2BeRefreshed=TRUE;
-            //try to show the next or the previous photo if exists
-            res=getNext(viewedPhotoIndex);
-            //g_print("getnext %i\n",res);
-            if (res==-1) {
-                res=getPrevious(viewedPhotoIndex);
-                if (res==-1) {
-                    //g_print("you are in\n");
-                    viewedPhotoIndex=-1;
-                    gtk_widget_destroy(dialog);
-                    removeAllWidgets(GTK_CONTAINER(pWindow));
-                    gtk_widget_destroy(pWindow);
-                    return ;
-                }
-            }
-            removeAllWidgets(GTK_CONTAINER(pBoxViewWindow)); //we destroy the image
-            zoomScale=1.0f;
-            viewedPhotoIndex=res;
-            int ret=addPhoto2Viewer(viewedPhotoIndex); 
-            if (!ret){
-                GtkWidget *pLabel1=gtk_label_new("Sorry, an error happens!");
-                gtk_box_pack_start(GTK_BOX(pBoxViewWindow), pLabel1, TRUE, TRUE, 0);
-            }
-            gtk_widget_show_all(pBoxViewWindow);//we show the image 
-
-        }
-        else {           
-          g_print("Error: unable to delete the file %s",fileFullPath);
-        }
-    }  
-}
-/*
-refresh the viewer after a move action (called by moveToDialog)
-*/
-void moveInViewer(void){
-            g_ptr_array_remove_index(fileSet,viewedPhotoIndex);
-            viewedPhotoIndex--;
-            organizerNeed2BeRefreshed=TRUE;
-            //try to show the next or the previous photo if exists
-            int res=getNext(viewedPhotoIndex);
-            if (res==-1) {
-                res=getPrevious(viewedPhotoIndex);
-                if (res==-1) {
-                    viewedPhotoIndex=-1;
-                    removeAllWidgets(GTK_CONTAINER(pWindow));
-                    gtk_widget_destroy(pWindow);
-                    return ;
-                }
-            }
-            removeAllWidgets(GTK_CONTAINER(pBoxViewWindow)); //we destroy the image
-            zoomScale=1.0f;
-            viewedPhotoIndex=res;
-            int ret=addPhoto2Viewer(viewedPhotoIndex); 
-            if (!ret){
-                GtkWidget *pLabel1=gtk_label_new("Sorry, an error happens!");
-                gtk_box_pack_start(GTK_BOX(pBoxViewWindow), pLabel1, TRUE, TRUE, 0);
-            }
-            gtk_widget_show_all(pBoxViewWindow);//we show the image 
-}
-
-/*
-Handle double click to close the window.
-Show the popup menu with ctrl click.
-*/
-static gboolean  windowPressCB (GtkWidget *widget, GdkEventButton *event, gpointer data)  {
-    if (event->type==GDK_2BUTTON_PRESS) {
-        g_print("-doubleclicked on the view window");
-        removeAllWidgets(GTK_CONTAINER(widget)); //we clean the content of the window
-        gtk_widget_destroy(widget);//we destroy the window        
-        return TRUE; //interruption
-    } else if (event->type == GDK_BUTTON_PRESS){        
-        if (event->button == GDK_BUTTON_SECONDARY || event->state & GDK_CONTROL_MASK)  {
-            g_print("clickright"); //ctrl click for mac support
-            gtk_menu_popup (GTK_MENU(pMenuPopup), NULL, NULL, NULL, NULL, event->button, event->time); //gtk-3.18
-            //gtk_menu_popup_at_pointer(GTK_MENU(pMenuPopup), NULL); //gtk-3.22
-            return TRUE;
-        }
-    }
-    return FALSE;
-}
-
-/*
-When the window is closing 
-*/
-static void windowDestroyCB(GtkWidget *pWidget, gpointer pData){
-	g_print("\nwindow distroyed\n");
-    activeWindow=ORGANIZER; //we set it here, too late in photoorganizer.c 
-	zoomScale=1.0f;
-
-    if (organizerNeed2BeRefreshed){
-        refreshPhotoArray(TRUE);
-        organizerNeed2BeRefreshed=FALSE;
-    }
-    RowObj *rowObj=g_ptr_array_index(rowArray,viewedPhotoRow);
-    //scroll and setfocus (the scroll is done with the changefocus function)
-    int indexInPhotoArray=getPhotoIndex(viewedPhotoIndex%colMax,viewedPhotoRow);
-    if (!rowObj->loaded==TRUE){
-        if (indexInPhotoArray>=initPhotoIndex) scroll2Row(viewedPhotoRow,BOTTOM); else scroll2Row(viewedPhotoRow,TOP);
-        focusIndexPending=indexInPhotoArray;  //postponed the grab focus-> processed by the next run of scShowAllGtk
-        g_print("back to organiser, postpone the focus for %i, row %i\n",focusIndexPending,viewedPhotoRow);
-    }else {
-        if (indexInPhotoArray>=initPhotoIndex) changeFocus(indexInPhotoArray,BOTTOM,TRUE); else changeFocus(indexInPhotoArray,TOP,TRUE);
-    }
-}
-
-/*
-When the Photoviewer main window has been shown
-*/
-static gboolean  windowMapCallBack (GtkWidget *widget, GdkEvent *event, gpointer data)  {
-    //g_print("view window ready");
-    activeWindow=VIEWER;
-    g_signal_connect (G_OBJECT (pWindow),"button-press-event",G_CALLBACK (windowPressCB), NULL);   // we set this event handler after the initialisation to avoid conflict with the double click in the main window
-}
-
-/*
-return the previous photo index 
-*/
-static int getPrevious(int index){
-    if (viewedPhotoIndex==0){ //first photo of the current dir
-        int previousDir=getPreviousDir(&viewedPhotoRow);
-        if (previousDir!=-1){
-            char *currentDir= getFullPathFromidNode(previousDir, NULL);
-            g_ptr_array_unref(fileSet);
-            fileSet=getDirSortedByDate(currentDir);
-            viewedPhotoDirNode=previousDir;
-            viewedPhotoIndex=fileSet->len -1;            
-        }else {
-            return -1; //error
-        }
-    } else {
-        int row2sub=viewedPhotoIndex%colMax;
-        viewedPhotoIndex--;
-        if (row2sub==0) viewedPhotoRow--;
-    }
-    return viewedPhotoIndex;
-}
-
-/*
-return the next photo index 
-*/
-static int getNext(int index){
-    if (viewedPhotoIndex==(fileSet->len-1)){ //last photo of the current dir
-        int nextDir=getNextDir(&viewedPhotoRow);
-        if (nextDir!=-1){
-            char *currentDir= getFullPathFromidNode(nextDir, NULL);
-            g_ptr_array_unref(fileSet);
-            fileSet=getDirSortedByDate(currentDir);
-            viewedPhotoDirNode=nextDir;
-            viewedPhotoIndex=0;            
-        }else {
-            return -1; //error
-        }
-    } else {
-        viewedPhotoIndex++;
-        int row2add=viewedPhotoIndex%colMax;
-        if (row2add==0) viewedPhotoRow++;
-    }
-    return viewedPhotoIndex;
-}
-
-void updateStatusMessageViewer(char *value){
-    gtk_label_set_text(GTK_LABEL(pStatusMessage),value);
-    gtk_widget_show(pStatusMessage);
-}
-

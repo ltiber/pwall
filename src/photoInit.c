@@ -8,6 +8,7 @@ start the photoOrganizer
 */
 #include <stdlib.h>
 #include <stdio.h>
+#include <locale.h>
 #include <math.h>
 #include <gtk/gtk.h>
 #include <tsoft.h>
@@ -18,6 +19,8 @@ start the photoOrganizer
 #include <sys/stat.h>
 #include <unistd.h>
 #include <thumbnail.h>
+#include <fileSystemMonitor.h>
+
 
 
 enum {RIGHT, LEFT};
@@ -37,6 +40,8 @@ static void savePhotosRootDirToIniFile(void);
 static void appActivated (GtkApplication *app, gpointer user_data) ; //used for menu
 static void appStarted (GtkApplication *app, gpointer user_data);
 static void appOpened (GApplication *application, GFile **files, gint n_files, const gchar *hint);
+static void menuButtonClickCB (GtkButton *button, gpointer data);
+
 
 //public variable
 char *thumbnailDir; //initialized in the main
@@ -54,6 +59,8 @@ static GThread  *pThread;
 static GtkWidget *pWindow;
 static GtkWidget *fileChooser;
 static int dirInCmd =FALSE; //did the root photo dir initialized in the command ?
+static GtkWidget *popover=NULL;
+
 
 int main(int argc, char *argv[]){
     
@@ -101,11 +108,13 @@ int main(int argc, char *argv[]){
     const char *APP_RES = g_getenv ("PWALL_RES");  //for OSX support
 	if (APP_RES == NULL) APP_RES="/usr/share"; //example /usr/share/pwall	
 	resDir = g_strdup_printf("%s/%s",APP_RES,"pwall"); 
-    g_print("\nnew application - resources in %s\n",resDir);
+    g_print("new application - resources in %s\n",resDir);
     #ifdef FLATPAK
     resDir="/app/extra/export/share";
     #endif 	
     int status;
+    //char *locale = setlocale (LC_ALL, ""); //check locale for glib sorting : issue in flatpak runtime Gtk-WARNING **: Locale not supported by C library
+    //g_print("local%s",locale);
     app = gtk_application_new ("com.tsoft.pwall", G_APPLICATION_NON_UNIQUE | G_APPLICATION_HANDLES_OPEN);//G_APPLICATION_HANDLES_OPEN to get the command line
     g_signal_connect (app, "activate", G_CALLBACK (appActivated), NULL);
     g_signal_connect (app, "startup", G_CALLBACK (appStarted), NULL);
@@ -139,37 +148,45 @@ static void chgPhotoDirCB (GSimpleAction *action, GVariant *parameter, gpointer 
 }
 
 void helpCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){    
-    #ifdef LINUX
-    char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "help.html");
-    GError *err = NULL;
-    gchar *stdOut = NULL;
-    gchar *stdErr = NULL;
-    int status=0;
-    char *cmd = g_strdup_printf("xdg-open %s",helpFilePath); //run the browser
-    g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
-    if (err){ 
-        g_print ("-error: %s\n", err->message);
-    }
-    //g_print("\nhelp path =%s\n",helpFilePath);
-    /*GAppInfo *appInfo=g_app_info_get_default_for_uri_scheme ("http");
-    if (appInfo!=NULL){        
+    /*
+    const char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "help.html");
+    g_print("flatpak dbg %s\n",helpFilePath);
+    GError *err = NULL;*/
+    /* option 1 but ERROR GLib-GIO-CRITICAL **: g_dbus_connection_signal_subscribe: assertion 'G_IS_DBUS_CONNECTION (connection)' failed
+    gtk_show_uri_on_window (GTK_WINDOW(pWindow), helpFilePath, GDK_CURRENT_TIME, &err);    */
+    /* option 2 but appinfo is null
+    GAppInfo *appInfo=g_app_info_get_default_for_uri_scheme ("http");
+    if (appInfo!=NULL){
         GFile *pFile=g_file_new_for_path (helpFilePath);
         GList *l=g_list_append(NULL,pFile); 
+        g_print("\nflatpak before launch");
         g_app_info_launch (appInfo,l, NULL, NULL);
     }*/
-    #elif OSX
-    char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "helposx.html");
+    /*
+    g_app_info_launch_default_for_uri(helpFilePath,NULL,&err);
+    if (err){ 
+        g_print ("-error: %s\n", err->message);
+    }*/
     GError *err = NULL;
     gchar *stdOut = NULL;
     gchar *stdErr = NULL;
     int status=0;
+    #ifdef FLATPAK
+    char *helpFilePath="https://htmlpreview.github.io/?https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/help.html";
+    char *cmd = g_strdup_printf("xdg-open %s",helpFilePath); //run the browser
+    #elif LINUX
+    char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "help.html");
+    char *cmd = g_strdup_printf("xdg-open %s",helpFilePath); //run the browser
+    #elif OSX
+    char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "helposx.html");
     char *cmd = g_strdup_printf("open %s",helpFilePath); //run the browser
+    //TODO WIN
+    #endif
     g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
     if (err){ 
         g_print ("-error: %s\n", err->message);
     }
-    //TODO WIN
-    #endif
+
 }
 
 const GActionEntry app_actions[] = {
@@ -177,10 +194,9 @@ const GActionEntry app_actions[] = {
 };
 
 /*
-The place where we create the main menu
+gnome 3.34 and + support for menus , we settle it in the title menu
 */
-static void appStarted (GtkApplication *app, gpointer user_data) {
-    g_print("app started");
+void initPrimaryMenu(GtkWidget *menuButton){
     GMenu *menu;
     g_action_map_add_action_entries (G_ACTION_MAP (app), app_actions, G_N_ELEMENTS (app_actions), app);
     menu = g_menu_new ();
@@ -188,12 +204,35 @@ static void appStarted (GtkApplication *app, gpointer user_data) {
     g_menu_append (menu,"Change photos directory","app.chgPhotoDir");
     g_menu_append (menu, "Help", "app.help");
     g_menu_append (menu, "Quit", "app.quit");
-    gtk_application_set_app_menu (GTK_APPLICATION (app),G_MENU_MODEL (menu));
+    popover=gtk_popover_new_from_model (menuButton, G_MENU_MODEL (menu));
+    g_signal_connect (G_OBJECT (menuButton),"button-press-event",G_CALLBACK (menuButtonClickCB), NULL); //click
+    g_signal_connect (G_OBJECT (menuButton),"key-press-event",G_CALLBACK (menuButtonClickCB), NULL); //click
     g_object_unref (menu);
 }
 
+static void menuButtonClickCB (GtkButton *button, gpointer data){
+    gtk_widget_show(popover); 
+    //gtk_popover_popup(GTK_POPOVER(popover)); //not supported in ubuntu 16.04
+}
+/*
+The place where we create the main menu
+*/
+static void appStarted (GtkApplication *app, gpointer user_data) {
+    g_print("app started\n");
+    //     gnome 3.34+ don't support any more gtk_application_set_app_menu to put menu in the primarymenu//
+   /* GMenu *menu;
+    g_action_map_add_action_entries (G_ACTION_MAP (app), app_actions, G_N_ELEMENTS (app_actions), app);
+    menu = g_menu_new ();
+    g_menu_append (menu,"Refresh Thumbnails","app.refreshThumbnails");
+    g_menu_append (menu,"Change photos directory","app.chgPhotoDir");
+    g_menu_append (menu, "Help", "app.help");
+    g_menu_append (menu, "Quit", "app.quit");
+    gtk_application_set_app_menu (GTK_APPLICATION (app),G_MENU_MODEL (menu));
+    g_object_unref (menu);*/
+}
+
 static void appActivated (GtkApplication *app, gpointer user_data) {
-    g_print("app activated");
+    g_print("app activated\n");
     pWindow = gtk_application_window_new(app);
 	gtk_window_set_position(GTK_WINDOW(pWindow), GTK_WIN_POS_CENTER); //default position
     
@@ -330,13 +369,13 @@ static gboolean  btnValidateCB (GtkWidget *event_box, GdkEventButton *event, gpo
                 gtk_main_iteration ();
             windowMapCallBack(NULL,NULL,NULL); //start the initialization
         } else {
-            gtk_window_close(_pWindow);
+            gtk_window_close(GTK_WINDOW(_pWindow));
             refreshPhotoArray(TRUE);
             scroll2Row(0,TOP);
             focusIndexPending=0;
             updateStatusMessage(g_strdup_printf("The photo directory has changed to %s.",photosRootDir));
         }
-    } else if (chgRootDirOpt) gtk_window_close(_pWindow);
+    } else if (chgRootDirOpt) gtk_window_close(GTK_WINDOW(_pWindow));
 
 }
 
@@ -378,7 +417,7 @@ Load the photo directory tree to attach to the treeview later
 */
 static void *_loadTreeModel(void *pointer){
     //we create the store to host the treeview data	
-    //Element of the tree has 3 fields : dirname, fullpath, idnode
+    //each row of the tree  has 4 fields : dirname, fullpath, idnode, counter
     pStore=gtk_tree_store_new(N_COL,G_TYPE_STRING,G_TYPE_STRING, G_TYPE_INT,G_TYPE_INT); 
 
     loadTreeModel(); //do the job
@@ -390,49 +429,54 @@ static void *_loadTreeModel(void *pointer){
 }
 
 void loadTreeModel(void){
+    g_print("loadTreeModel");
     //init folder counter arrays to be filled and injected in the pStore
-    folderNodeArray = g_array_new (FALSE, FALSE, sizeof (gint));
-    folderCounterArray = g_array_new (FALSE, FALSE, sizeof (gint));
+    folderNodeArray = g_array_new (FALSE, FALSE, sizeof (gint)); //array of all the idnodes folder
+    folderCounterArray = g_array_new (FALSE, FALSE, sizeof (gint));//array of number of files by folder
     //we feed the store with the subdirs of the photosRootDir 
     photosRootDirCounter = readRecursiveDir(photosRootDir, NULL, TRUE);  //function is coming from photoOrganizer
-    addCounters2Tree(NULL);
-    g_print( "%i files in photoRootDir and subdirs", photosRootDirCounter);
+    addCounters2Tree(NULL); //update the number of files in each dir
+    g_print( "%i files in photoRootDir and subdirs\n", photosRootDirCounter);
     int children=gtk_tree_model_iter_n_children (GTK_TREE_MODEL(pStore), NULL); //read the number of top level node
-    g_print("pstore count %i-",children);
-    int rootFilesCounter=countFilesInDir(photosRootDir,TRUE);
-    if (children==0 || dirInCmd || rootFilesCounter !=0 ||photosRootDirCounter==0) { //for dir asked with command, if files exists in the root or if there is nothing at all, we show this dir as the root 
-        gtk_tree_store_clear(pStore); //be sure that the store is cleared
-        //we need at least one entry
-        //we change the root dir to one level back
-        //we had the root dir to pStore
+    //g_print("pstore count %i-",children);
+    int rootFilesCounter=countFilesInDir(photosRootDir,TRUE,FALSE); //calculate numbers of file in the photoroot dir not in subdir
+    
+    /*the model for the tree starts with subdirs of photosRootDir but in a few cases it's better to have the photosRootDir, the root node of the tree */    
+    if (children==0 || dirInCmd || rootFilesCounter !=0 ||photosRootDirCounter==0) { 
+        //if children ==0 we need at least one entry in the tree       
+        //for dir asked with command, if files exists in the root or if there is nothing at all, we show this dir as the root of the tree node 
+        //rootFilesCounter !=0, if files exists directly under the photosRootDir, we have to show them so the root node of the tree is photosRootDir
+        //photosRootDirCounter==0 if there is no photos neither videos in photosRootDir and subdirs, we need at least one entry in the tree
+        gtk_tree_store_clear(pStore); //we remove all the rows of the store
+        
+        
+        /*get the id node of the photorootdir */
         struct stat bufStat;
         int ret=stat(photosRootDir, &bufStat);
         long int inode;
         if (ret==0) inode= bufStat.st_ino; else return;
         
-        photosRootDir=g_strdup(getCanonicalPath (photosRootDir)); //resolve relative path if needed
+        photosRootDir=g_strdup(getCanonicalPath (photosRootDir)); //resolve relative path if needed especialy when it is transmitted in a command
 
         char *pos=g_strrstr (photosRootDir, "/");
         int p = pos ? pos - photosRootDir : -1;
 
         if (p!=-1){
-            char *left=g_strndup (photosRootDir,p); //level back
-            //g_print("left %s", left);
-            char *right=++pos; //basename
+            char *right=++pos; //basename for the dir
             //g_print("right %s", right);
-            //we create the lonely element of the tree
+            
+            //we create the first element of the tree
             GtkTreeIter child;
             gtk_tree_store_append (pStore, &child, NULL); //create the child     
             gtk_tree_store_set (pStore, &child, BASE_NAME_COL,right, FULL_PATH_COL,photosRootDir,ID_NODE,inode,-1); //set content of the child 
-            //photosRootDir=left;
-            //g_print("\nloadtreemodel photosRootDir %s\n",photosRootDir);
-            //if (dirInCmd) { 
-                //init folder counter arrays to be filled and injected in the pStore
+
             folderNodeArray = g_array_new (FALSE, FALSE, sizeof (gint));
             folderCounterArray = g_array_new (FALSE, FALSE, sizeof (gint));
-            photosRootDirCounter=readRecursiveDir(photosRootDir, &child, TRUE);
-            addCounters2Tree(NULL);
-            //}
+            
+            photosRootDirCounter=readRecursiveDir(photosRootDir, &child, TRUE); //fill the tree model
+            
+            addCounters2Tree(NULL); //update rows with the number of files of each dir
+            
         }
     }
 }
@@ -457,7 +501,7 @@ static int startOrganizer (gpointer user_data){
 Run when the photoInit window is ready
 */
 static gboolean  windowMapCallBack (GtkWidget *widget, GdkEvent *event, gpointer data)  {
-    g_print("waiting screen ready-");
+    g_print("waiting screen ready\n");
     if (photosRootDir==NULL){// launch the jfiledialog
         //set the size of the filechooser window
         int screenWidth=getMonitorWidth(pWindow);

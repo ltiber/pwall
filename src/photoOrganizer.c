@@ -19,10 +19,11 @@ Most actions(copy, delete, share, change date...) on photos are available in pho
 #include <gtk/gtk.h>
 #include <tsoft.h>
 #include <photoOrganizer.h>
-#include <photoViewer.h>
+#include <multiViewer.h>
 #include <thumbnail.h>
 #include <photoInit.h>
 #include <photoDialogs.h>
+#include <fileSystemMonitor.h>
 
 //private const
 #define DOUBLE_CLICK_TIME_DIF 500000   //double click time diff in microsec
@@ -39,6 +40,8 @@ int PHOTO_SIZE = 92;
 #endif
 int MARGIN = 2;
 enum {CTRL,SHIFT};
+enum {NOTHING,ONLY_VIDEOS,ONLY_PHOTOS, MIX_PHOTOS_VIDEOS};
+enum {PHOTO_APP, VIDEO_APP};
 
 
 //private global functions
@@ -57,11 +60,9 @@ static int whereIsTheFocus(void);
 static void focusCB(GtkWindow *window, GtkWidget *widget, gpointer   user_data);
 static gboolean  windowMapCB (GtkWidget *widget, GdkEvent *event, gpointer data) ;
 static void windowDestroyCB(GtkWidget *pWidget, gpointer pData);
-static void insertPhotoWithImage(GtkWidget *image, int col, int row, int idNodeFile, char *fullPath, long int time);
+static void insertPhotoWithImage(GtkWidget *image, int col, int row, int iDir, char *fullPath, long int time);
 static void updatePhotoWithImage(GtkWidget *image, int col, int row);
-static GtkWidget *loadThumbnail(const FileObj *pFileObj, char *fullPath);
-static int getPhotoCol(int index);
-static int getPhotoRow(int index); 
+static GtkWidget *loadThumbnail(const char *fullPathFile, int iDir);
 static int getNextRow(int index);
 static int getPreviousRow(int index);
 static int getRowFromFolder(int idNode);
@@ -101,8 +102,10 @@ static void scrollChanged (GtkAdjustment *adjustment,  gpointer user_data);
 static void scThreadStart(void *pointer);
 static int scCheckMove(int position);
 static void scShowRows(int top);
-static void insertImagesInRow(int row,int idNode,int index,int hasMore); //idNode of a directory
+static int insertImagesInRow(int row,int idNode,int index,int hasMore); //idNode of a directory
 static void scCreateNewThumbnails(void);
+static void scCleanArrays(void);
+static int scReleaseThread(gpointer user_data);
 static int scShowAllGtk(gpointer user_data);
 static int getNextIdNodeNotEmpty(int idNode, GtkTreeIter *parent);
 static void scSelectFolder(int idNode);
@@ -121,6 +124,7 @@ static void showHideSearchBtn(void);
 static void hideSearchBtn(GtkTreePath *treePath);
 static void showSearchBarCB(GtkWidget* widget, gpointer data);
 static void resetCurrentFilesInFolder(void);
+static int whatTypeIsSelected(void);
 
     
 //private global variable (static makes the variable private)
@@ -134,7 +138,9 @@ static GtkWidget *searchEntry, *searchBar, *btnDown, *btnUp;
 static GtkWidget *pStatusMessage, *pScrollingDate;
 static int screenWidth=-1; //initialized in the main
 static int screenHeight=-1;
-static char *noImageJpg="noimage.png";
+static char *noImagePng="noimage.png";
+static char *noVideoPng="novideo.png";
+static char *videoIconFile="videoIcon.png";
 //static char *photosDir; useless
 static int detailBoxEnabled=FALSE;
 static int treeTimerFunctionOn=FALSE;
@@ -144,7 +150,10 @@ static int preferedWidth, preferedHeight;
 //sc prefix is used to name global variable used in the scrolling management to fill or clear the photowall
 static int scPage=-1;
 static GThread *scThread=NULL;
-static int scMutex=FALSE;
+static int scWait=FALSE;
+int scMutex=0;  //used to lock portion of code in scroll thread and in refreshPhotoArray 
+G_LOCK_DEFINE (scMutex);
+static int scInterrupt=FALSE;
 static int scStopThread=FALSE;
 static int scTop=-1;
 static GPtrArray *scWaitingImages;
@@ -152,6 +161,7 @@ static GPtrArray *scNewThumbnails2Create=NULL;
 static GPtrArray *scWaitingNewThumbnails;
 static GArray *scWaitingLabels;
 static int scFocusIndexPending=-1;
+static gboolean newFocusFromRefreshPhotoWall=FALSE;
 static int scSelectingFolder=FALSE; //used to change the tree selection when the focus in the photowall get to a photo belonging to another directory
 static int scSelectingFolderDisabled=FALSE; //used when the user change his treeselecion
 static int scLastPosition=-1; //last position of the scrollbar
@@ -159,7 +169,6 @@ static char *scBeforeMessageWait=NULL; //used in scHideMessageWait to reset the 
 static GPtrArray *searchRes=NULL; //used for searching
 static int searchIndex=-1; //used for the up and down searching button
 static int _keyPostponed=FALSE;
-static int scInterruptLoading=FALSE;
 static GtkWidget *_waitingScreen;
 static gboolean expandCollapseTreePending; 
 
@@ -193,7 +202,19 @@ void photoOrganizerInit(GtkWidget *waitingScreen) {
     pWindow = gtk_application_window_new(app);
     pWindowOrganizer=pWindow; //for sharing with other modules
     gtk_window_set_position(GTK_WINDOW(pWindow), GTK_WIN_POS_CENTER); //default position
-    gtk_window_set_title(GTK_WINDOW(pWindow), "pwall");
+ 
+    //    add the menu to the titleBar     //  
+    GtkWidget *headerBar= gtk_header_bar_new();
+    gtk_header_bar_set_title(GTK_HEADER_BAR(headerBar),"pwall");
+    GtkWidget *hamburger=gtk_button_new_from_icon_name ("open-menu-symbolic", GTK_ICON_SIZE_MENU);//list-add-symbolic//send-to-symbolic
+ 
+    initPrimaryMenu(hamburger);
+    
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar),hamburger);
+ 
+    gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(headerBar), TRUE);
+
+    gtk_window_set_titlebar (GTK_WINDOW(pWindow), headerBar);
 
     //The application icon is defined in the .desktop
     g_signal_connect(G_OBJECT(pWindow), "destroy", G_CALLBACK(windowDestroyCB), NULL);
@@ -453,19 +474,21 @@ The function loads the thumbnail if it exists in thumbnailDir and doesn't need t
 else return NULL.
 We don't create the thumbnail in this function.
 */
-static GtkWidget *loadThumbnail(const FileObj *pFileObj, char *fullPath){
-    GtkWidget *pImage1;
-    char *fullPathFile;
-    //useless if (fullPath==NULL)        fullPathFile =g_strdup_printf ("%s/%s",photosDir,pFileObj->name); 
-    //else
-    fullPathFile =g_strdup_printf ("%s/%s",fullPath,pFileObj->name); ; 
+static GtkWidget *loadThumbnail(const char *fullPathFile, int iDir){
+    GtkWidget *pImage1; 
     //g_print("%s\n",pFileObj->name);
     //if (g_strcmp0(pFileObj->name, "IMG_2532.JPG")==0) g_print("debug IMG_2532-idnode%i\n", pFileObj->idNode);
     
-    //check thumbnail to refresh (if file date > thumbnail date)
-    gchar *fullPathThumbnail =g_strdup_printf ("%s/%i",thumbnailDir,pFileObj->idNode);
+    //check thumbnail to refresh (if file date != thumbnail date)
+    gchar *fullPathThumbnail = getThumbnailPath (thumbnailDir,iDir,fullPathFile);
     int thumbnailTime=getFileTime(fullPathThumbnail);
-    if (thumbnailTime>-1 && pFileObj->time >=thumbnailTime) remove(fullPathThumbnail);
+    int fileTime=getFileTime(fullPathFile);
+
+    if (thumbnailTime>-1 && fileTime !=thumbnailTime) {
+        remove(fullPathThumbnail);
+        g_free(fullPathThumbnail);
+        return NULL;
+    }
 
     //load thumbnail    
     GdkPixbuf *pBuffer1 = gdk_pixbuf_new_from_file_at_size(fullPathThumbnail,PHOTO_SIZE,PHOTO_SIZE,NULL);
@@ -482,13 +505,16 @@ static GtkWidget *loadThumbnail(const FileObj *pFileObj, char *fullPath){
 /*
 Add the thumbnail image in the photoWall at the position specified in the parameters 
 */
-static void insertPhotoWithImage(GtkWidget *image, int col, int row, int idNodeFile, char *fullPath, long int time){
-    GtkWidget *pEventBox, *pOverlay;
-    GtkWidget *pLabel1, *pLabel2, *pLabel3, *pLabel4, *pEntry1;
-    //GtkWidget *pPhotoDetailBox;
-    GtkWidget *pFocusBox;
-    int _index=0;
-    IntObj *arrayIndex=malloc(sizeof(IntObj));
+static void insertPhotoWithImage(GtkWidget *image, int col, int row, int iDir, char *fullPath, long int time){
+    GtkWidget *pEventBox, *pOverlay, *pFocusBox;
+    GtkWidget *pLabel1, *pLabel2, *pLabel3, *pLabel4, *pEntry1;  
+
+    //check if the photo is already registered in the photoArray so we need to do an update
+    int _index=getPhotoIndex(col,row);
+    if (_index!=-1 && g_ptr_array_index(photoArray,_index)!=NULL) {
+        updatePhotoWithImage(image,col,row);
+        return;
+    }        
     
     int x=col * (PHOTO_SIZE + MARGIN) + MARGIN ;
     int y= row * (PHOTO_SIZE + MARGIN);//+MARGIN //pas de margin pour la 1ere row
@@ -507,10 +533,20 @@ static void insertPhotoWithImage(GtkWidget *image, int col, int row, int idNodeF
     if (image!=NULL)  gtk_container_add (GTK_CONTAINER (pEventBox), image);
     else  gtk_widget_set_size_request(pEventBox,PHOTO_SIZE,PHOTO_SIZE);
 
-    //extract the lastmoddate of the image
-    long int _time=time;
+    //extract the lastmoddate of the image no more used
+    /*long int _time=time;
     char _date[20];
-    strftime(_date, 20, "%Y/%m/%d %H:%M:%S", localtime(&_time)); //localtime create a new tm struc which represent a time       
+    strftime(_date, 20, "%Y/%m/%d %H:%M:%S", localtime(&_time)); //localtime create a new tm struc which represent a time  */     
+    
+    //add video icon if we display a video
+    if (hasVideoExt(g_path_get_basename(fullPath))){
+        gchar *fullPathVideoIcon =g_strdup_printf ("%s/%s",resDir,videoIconFile);
+        GdkPixbuf *bufferVid = gdk_pixbuf_new_from_file_at_size(fullPathVideoIcon,PHOTO_SIZE,PHOTO_SIZE,NULL);
+        GtkWidget *imgVid = gtk_image_new_from_pixbuf (bufferVid);
+        g_free(fullPathVideoIcon);
+        gtk_overlay_add_overlay (GTK_OVERLAY (pOverlay), imgVid);
+        gtk_overlay_set_overlay_pass_through (GTK_OVERLAY(pOverlay),imgVid,TRUE);        
+    }
     
     //add a border component to render the focus of a photo
     pFocusBox=gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -532,7 +568,7 @@ static void insertPhotoWithImage(GtkWidget *image, int col, int row, int idNodeF
     //register the new component in the array
     gchar *value = g_strdup_printf("photo %i,%i",col,row);
     PhotoObj *pPhotoObj=malloc(sizeof(PhotoObj));
-    pPhotoObj->idNode=idNodeFile;
+    pPhotoObj->iDir=iDir;
     pPhotoObj->col=col;
     pPhotoObj->row=row;
     pPhotoObj->hasFocus=FALSE;
@@ -543,11 +579,11 @@ static void insertPhotoWithImage(GtkWidget *image, int col, int row, int idNodeF
     pPhotoObj->fullPath=fullPath; //no free TODO free à faire quand on supprimera le photoArray
     pPhotoObj->height=-1;
     pPhotoObj->width=-1; 
-    pPhotoObj->lastModDate=_time; 
+    pPhotoObj->lastModDate=time; 
 
-    _index=getPhotoIndex(col,row);     //find the index in photoArray
     photoArray->pdata[_index]=pPhotoObj; //update the photoArray with the new data
-
+    
+    IntObj *arrayIndex=malloc(sizeof(IntObj));
     arrayIndex->value=_index;
     g_object_set_data (G_OBJECT(pEventBox), "arrayIndex", arrayIndex);     //set data for event handling
 
@@ -640,7 +676,7 @@ static gboolean  clickPhotoCB (GtkWidget *event_box, GdkEventButton *event, gpoi
         GdkWindow *gdkWindow=gtk_widget_get_window(pWindow);
         GdkScreen *gdkScreen=gdk_window_get_screen(gdkWindow);
         int monitor=gdk_screen_get_monitor_at_window(gdkScreen,gdkWindow);
-        photoViewerInit(GTK_WINDOW(pWindow), arrayIndex->value, monitor);   //double click callback : launch new screen with the photo 
+        multiViewerInit(GTK_WINDOW(pWindow), arrayIndex->value, monitor);   //double click callback : launch new screen with the photo 
         
         return TRUE; //if double click do nothing, action has already been managed in the single click and stop the propagation of the event
         
@@ -707,7 +743,7 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
         if ( photoArray->len == 0 ) break;
         if (event->state & GDK_MOD1_MASK) {
             g_print("-alt return");
-            showExifDialog(TRUE);
+            showPropertiesDialog();
             //detailBoxEnabled=!detailBoxEnabled;
             //showHideDetailedBox();
             break;
@@ -717,14 +753,14 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
         GdkWindow *gdkWindow=gtk_widget_get_window(pWindow);
         GdkScreen *gdkScreen=gdk_window_get_screen(gdkWindow);
         int monitor=gdk_screen_get_monitor_at_window(gdkScreen,gdkWindow);
-        if (newFocus!=-1) photoViewerInit(GTK_WINDOW(pWindow), newFocus, monitor);   //double click callback : launch new screen with the photo 
+        if (newFocus!=-1) multiViewerInit(GTK_WINDOW(pWindow), newFocus, monitor);   //double click callback : launch new screen with the photo 
         break; //1er return pas très fiable puis je sais pas pourquoi ok
     case GDK_KEY_i:
     case GDK_KEY_I: //OSX shortcut
     	g_print("state %i GDK_META_MASK %i\n",event->state,GDK_META_MASK);
         if (event->state & GDK_META_MASK) {
             g_print("-alt return");
-            showExifDialog(TRUE);
+            showPropertiesDialog();
         }
         break;
     case GDK_KEY_Left:
@@ -757,12 +793,12 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
             if (_row!=-1){
                 newFocus=getPhotoIndex(getPhotoCol(newFocus),_row);
                 if (newFocus>=0) {
-                    if (event->state & GDK_SHIFT_MASK){ //select down
+                    if (event->state & GDK_SHIFT_MASK){ //select up
                         multiSelectPhoto(newFocus,SHIFT);
                         changeFocus(newFocus,TOP,FALSE);
                     } else {
                         if ((((now - lastKey)/1000) > 150)&& !_keyPostponed)
-                            changeFocus(newFocus,TOP,TRUE); //move down directly
+                            changeFocus(newFocus,TOP,TRUE); //move up directly
                         else {
                             if (!_keyPostponed){ //delay 150ms
                                 _keyPostponed=TRUE;
@@ -850,6 +886,13 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
             copyToDialog();
         }
         break; 
+    case GDK_KEY_x:
+    case GDK_KEY_X:
+        if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
+            g_print("-ctrl x");
+            moveToDialog();
+        }
+        break; 
     case GDK_KEY_f:
     case GDK_KEY_F:
         if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {
@@ -864,7 +907,7 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
             GdkWindow *gdkWindow=gtk_widget_get_window(pWindow);
             GdkScreen *gdkScreen=gdk_window_get_screen(gdkWindow);
             int monitor=gdk_screen_get_monitor_at_window(gdkScreen, gdkWindow);
-            if (newFocus!=-1) photoViewerInit(GTK_WINDOW(pWindow), newFocus, monitor);   //double click callback : launch new screen with the photo 
+            if (newFocus!=-1) multiViewerInit(GTK_WINDOW(pWindow), newFocus, monitor);   //double click callback : launch new screen with the photo 
         }
         break;  
     case GDK_KEY_q:
@@ -891,7 +934,7 @@ static void setMenuPopupPosition(GtkMenu *menu, gint *x, gint *y, gboolean *push
     //gdk_window_get_root_origin (win, &_x, &_y); //doesn't work 223,131
     //gdk_window_get_position (win, &_x, &_y); //doesn't work 96,282
     gdk_window_get_origin (win, &_x, &_y); //works
-    g_print("\position focusboc %i %i\n",_x,_y);
+    g_print("\nposition focusbox %i %i\n",_x,_y);
     *x=_x+PHOTO_SIZE/2;
     *y=_y+PHOTO_SIZE/2;
     /*GtkAllocation rect;
@@ -1019,17 +1062,19 @@ void changeFocus(int index, ScrollType type, int clearSelection){
                 pPhotoObj->selected=TRUE;
                 gtk_widget_show(pPhotoObj->pFocusBox);
                 
-                //scroll with changing the adjustment value
-                int position = gtk_adjustment_get_value (scAdjustment);
-                int topRow = position/(PHOTO_SIZE + MARGIN);
-                int bottomRow=topRow+scRowsInPage-1;//-1 because index start at 0
-                if ( pPhotoObj->row<topRow || pPhotoObj->row>bottomRow){
-                    g_print("\nchangefocus_rowToScroll%i-top%i-bottom%i",pPhotoObj->row,topRow,bottomRow);
-                    scroll2Row(pPhotoObj->row,type); 
-                } else
-                    g_print("\nchangefocus_noscrollForrow%i-top%i-bottom%i",pPhotoObj->row,topRow,bottomRow); 
-                while (gtk_events_pending ()) gtk_main_iteration(); //consume all the events before getting the focus
-                gtk_widget_grab_focus(pPhotoObj->pEventBox);
+                /*scroll with changing the adjustment value*/
+                if (!newFocusFromRefreshPhotoWall){ //exception when refreshphotowall() is pending
+                    int position = gtk_adjustment_get_value (scAdjustment);
+                    int topRow = position/(PHOTO_SIZE + MARGIN);
+                    int bottomRow=topRow+scRowsInPage;// -1 + 1; (-1 because index start at 0 and +1 when half a thumbnail on top and bottom of the wall) = 0
+                    if ( pPhotoObj->row<topRow || pPhotoObj->row>bottomRow){
+                        g_print("changefocus_rowToScroll%i-top%i-bottom%i\n",pPhotoObj->row,topRow,bottomRow);
+                        scroll2Row(pPhotoObj->row,type);
+                    } else
+                        g_print("changefocus_noscrollForrow%i-top%i-bottom%i\n",pPhotoObj->row,topRow,bottomRow); 
+                    while (gtk_events_pending ()) gtk_main_iteration(); //consume all the events before getting the focus
+                    gtk_widget_grab_focus(pPhotoObj->pEventBox);
+                } else {newFocusFromRefreshPhotoWall=FALSE;}
                 //select also the relative folder
                 RowObj *rowObj=g_ptr_array_index(rowArray,pPhotoObj->row);
                 //Bugfixing if the treeview selection is lost, reset one
@@ -1037,7 +1082,7 @@ void changeFocus(int index, ScrollType type, int clearSelection){
                 GtkTreeIter iter;
                 GtkTreeModel *model;
                 gboolean hasTreeSelection=gtk_tree_selection_get_selected (selection, &model, &iter);  
-                if (!hasTreeSelection) g_print("\nTree selection lost\n");
+                if (!hasTreeSelection) g_print("Tree selection lost\n");
                 if (rowObj->idNode!=treeIdNodeSelected || !hasTreeSelection) {
                     //first check if the folder treeIdNodeSelected is empty and idnode is a children
                     scSelectFolder(rowObj->idNode);
@@ -1145,7 +1190,7 @@ int whichRowHasTheFocus(void){
 Update the message on the bottom-right with basics attributs of the found photo
 */
 static void updateStatusMessageWithDetails(int index){
-    g_print("\nupdateStatusMessageWithDetails");
+    g_print("updateStatusMessageWithDetails");
     static int opMessage=FALSE; //used to keep operation message otherwise it must be hidden by the property of the focused photo
     static gint64 lastCallTime=0;
     gint64 now =g_get_monotonic_time();
@@ -1164,8 +1209,8 @@ static void updateStatusMessageWithDetails(int index){
     if (!opMessage && g_str_has_prefix(txt,"Please wait")) {opMessage=TRUE;return;}
     if (!opMessage && g_str_has_prefix(txt,"File's ")) {opMessage=TRUE;return;} //
     if (!opMessage && g_str_has_prefix(txt,"The photo directory has")) {opMessage=TRUE;return;} //
-    if (!opMessage && (strstr(txt, "copied") != NULL)) {g_print("\ncopy\n");opMessage=TRUE;return;} //for copy
-    if (!opMessage && (strstr(txt, "moved") != NULL)) {g_print("\nmove\n");opMessage=TRUE;return;} //for move
+    if (!opMessage && (strstr(txt, "copied") != NULL)) {g_print("copy\n");opMessage=TRUE;return;} //for copy
+    if (!opMessage && (strstr(txt, "moved") != NULL)) {g_print("move\n");opMessage=TRUE;return;} //for move
     PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,index);
     //retrieve filename
     gchar *filename;
@@ -1177,10 +1222,17 @@ static void updateStatusMessageWithDetails(int index){
     //retrieve date
     long int _time=pPhotoObj->lastModDate;
     char _date[20];
-    strftime(_date, 20, "%Y/%m/%d %H:%M:%S", localtime(&_time)); //localtime create a new tm struc which represent a time 
+    strftime(_date, 20, "%Y/%m/%d %H:%M:%S", localtime(&_time)); //localtime create a new tm struc which represent a time
     //lazy loading width height
-    if (pPhotoObj->width==-1) getPhotoSize(pPhotoObj->fullPath,&pPhotoObj->width,&pPhotoObj->height);
-    char *status=g_strdup_printf("%s %ix%i %s",filename, pPhotoObj->width, pPhotoObj->height, _date);
+    char *status;
+    if (hasPhotoExt(filename)){
+        if (pPhotoObj->width==-1) getPhotoSize(pPhotoObj->fullPath,&pPhotoObj->width,&pPhotoObj->height);
+        //status=g_strdup_printf("(index%i) %s  %ix%i  %s",index, filename, pPhotoObj->width, pPhotoObj->height, _date);
+        status=g_strdup_printf("%s  %ix%i  %s", filename, pPhotoObj->width, pPhotoObj->height, _date);
+    } else  {
+        float size=getFileSize(pPhotoObj->fullPath);
+        status=g_strdup_printf("%s  %.1fMB  %s",filename, size, _date);
+    }
     updateStatusMessage(status);
     if (filename!=NULL) g_free(filename);
     g_free(status);
@@ -1189,7 +1241,7 @@ static void updateStatusMessageWithDetails(int index){
 
 void updateStatusMessage(char *value){
     if (activeWindow == VIEWER) {updateStatusMessageViewer(value);return;}
-    if (value==NULL || value[0]=='\0'){g_print("\nHideStatusMessageWithValue%s\n",value);gtk_widget_hide (pStatusMessage);return;} //hide the status message
+    if (value==NULL || value[0]=='\0'){g_print("HideStatusMessageWithValue%s\n",value);gtk_widget_hide (pStatusMessage);return;} //hide the status message
     gtk_label_set_text(GTK_LABEL(pStatusMessage),value);
     gtk_widget_show(pStatusMessage);
 }
@@ -1205,28 +1257,44 @@ void updateScrollingDate(char *value){
 
 /* 
 We take the data from photoArray.
-But as we load/unload this array dynamically, this function for the moment only works if the photo is visible.
-TODO adapt to calculate the value to get robustness
+But even we load/unload this array dynamically, this function works not only for visible photos.
+
 */
-static int getPhotoCol(int index){
+int getPhotoCol(int index){
+    if (index > photoArray->len -1 || index <0) return -1;
     PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,index);
-    return (pPhotoObj!=NULL)?pPhotoObj->col:-1;
+    if (pPhotoObj!=NULL) return pPhotoObj->col;
+    //look in RowObj to get the calculated row and after the col
+    RowObj *rowObj=NULL;
+    for (int i=0;i<rowArray->len;i++){
+        rowObj=g_ptr_array_index(rowArray,i);
+        if (rowObj->index!=-1 && rowObj->indexInPhotoArray<=index && (rowObj->len -1 + (int)rowObj->indexInPhotoArray)>=index){
+            //i is the row of the photo, rowObj->indexInPhotoArray is the first index in the row
+            return index - rowObj->indexInPhotoArray;
+        }            
+    }
+    g_print("error getPhotoCol index%i\n",index);
+    return -1; //fails, should not happen
 }
 
 /* 
 We take the data from photoArray.
-But as we load/unload this array dynamically, this function for the moment only works if the photo is visible.
+But even if we load/unload this array dynamically, this function works not only for visible photos.
 */
 int getPhotoRow(int index){
+    if (index > photoArray->len -1 || index <0) return -1; 
     PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,index);
     if (pPhotoObj!=NULL) return pPhotoObj->row;
     //look in RowObj to get the calculated row
     RowObj *rowObj=NULL;
     for (int i=0;i<rowArray->len;i++){
         rowObj=g_ptr_array_index(rowArray,i);
-        if (rowObj->index!=-1 && rowObj->indexInPhotoArray<=index && (colMax + (int)rowObj->indexInPhotoArray)>=index)
+        //chg colmax par rowObj->len
+        if (rowObj->index!=-1 && rowObj->indexInPhotoArray<=index && (rowObj->len -1 + (int)rowObj->indexInPhotoArray)>=index)
             return i;
     }
+    g_print("error getPhotoCol index%i\n",index);
+    return -1; //fails should not happen
 }
 
 /*
@@ -1265,37 +1333,39 @@ static int getPhotoY(int index){
 /*
 Get the previous row containing photos, index is a photoArray one.
 The row must be loaded (widgets created in GTK).
+If not it returns the photorow of the index
 */
 static int getPreviousRow(int index){
-    int row=getPhotoRow(index);
-    row--;
+    int photoRow=getPhotoRow(index);
+    int row=photoRow-1;
     while (TRUE){
-        if (row==-1) return -1; //out of range
+        if (row==-1) break; //out of range
         RowObj *rowObj =g_ptr_array_index(rowArray,row);
         if (rowObj->index>=0){
             //check if loaded
-            return (rowObj->loaded==TRUE)?row:-1;
+            return (rowObj->loaded==TRUE)?row:photoRow;
         }
         row--;
     }
+    return photoRow;
 }
-
 /*
 Get the next row containing photos, index is a photoArray one
 The row must be loaded (widgets created in GTK)
 */
 static int getNextRow(int index){
-    int row=getPhotoRow(index);
-    row++;
+    int photoRow=getPhotoRow(index);
+    int row=photoRow+1;
     while (TRUE){
-        if (row==rowArray->len) return -1; //out of range
+        if (row==rowArray->len) break; //out of range
         RowObj *rowObj =g_ptr_array_index(rowArray,row);
         if (rowObj->index>=0){
             //check if loaded
-            return (rowObj->loaded==TRUE)?row:-1;
+            return (rowObj->loaded==TRUE)?row:photoRow;
         }
         row++;
     }
+    return photoRow;
 }
 
 /*
@@ -1391,41 +1461,48 @@ The scThread will manage the loading and unloading of the photos.
 refreshTree TRUE to include the run of refreshTree
 */
 void refreshPhotoArray(int _refreshTree){
-    scMutex=TRUE; //we lock the thread
+    g_print("refreshPhotoArray launched\n");
+    if (scThread!=NULL){
+        //to finish the current activity of the scrolling thread. Exception is for the functions postponed by gdk_threads_add_idle() 
+        //scShowAllGtk,scShowMessageDate, scShowMessageWait, scUpdateNewThumbnailInGtk
+        scInterrupt=TRUE; 
+    }
+    G_LOCK(scMutex); //we lock the scrolling thread
+    scCleanArrays(); //we clean tempo arrays used by the scrolling thread so the posponed function will end
     if (_refreshTree){
         treeIdNodeSelected=-1;treeDirSelected=NULL; //reset folder selection
         refreshTree();//reset treemodel, reset photosRootDirCounter and counters by node if dirs and files have changed in the file system
+        loadDirectories2Monitor(); //refresh the monitoring
     }
-    g_print("refreshPhotoArray");
     g_ptr_array_unref(photoArray);
     removeAllWidgets(GTK_CONTAINER(photoWall));
     photoArray = g_ptr_array_new_with_free_func (g_free);     //we recreate the photoArray
     //We define a big static photoarray with the space for all the photos of the photoWall.
     //to gain some memory we will free invisible photos depending on the scrolling position
     //so pay attention that g_ptr_array_index can be NULL
-    g_ptr_array_set_size (photoArray,photosRootDirCounter);
+    g_ptr_array_set_size (photoArray,photosRootDirCounter); //every element is NULL at that time
 
     calculateRows(); //calculate the number of rows needed to place all the photos
 
-    resetCurrentFilesInFolder(); //reset the current reading of files
     
-    //calculate height of the photoWall. The photoWall must have the space for all the photos of your picture directory.
+    //calculate height of the photoWall scrolling pannel. The photoWall must have the space for all the photos of your picture directory.
     preferedHeight=(rowArray->len)*(PHOTO_SIZE+MARGIN) -MARGIN;
     gtk_widget_set_size_request(photoWall,preferedWidth,preferedHeight);
-    g_print ("scRows%i ",rowArray->len);
+    g_print ("RowArray Length %i \n",rowArray->len);
 
     scPage=gtk_adjustment_get_page_size (scAdjustment);
     scRowsInPage=ceilf(((float)scPage+MARGIN)/(PHOTO_SIZE+MARGIN)); //we add 1 margin to numerator because last row has no bottom margin
     g_print("rowsinPage%i",scRowsInPage);
     scLastPosition=-(PHOTO_SIZE+MARGIN)/2; //to refresh the photowall at the Last position
-    scShowRows(-1); //reset lastShowRow
-    scMutex=FALSE;//we free the thread
+    resetCurrentFilesInFolder(); //reset the current reading of files
+    scShowRows(-1); //to reset static var lastShowRowTop
     //Start the thread which handles the filling and unfilling of the photowall (only when the gtk UI is loaded)
     if (scThread==NULL){
-        if( (scThread = g_thread_new("photowall scrolling handler",(GThreadFunc)scThreadStart, NULL)) == NULL)
+        if( (scThread = g_thread_new("scrolling thread",(GThreadFunc)scThreadStart, NULL)) == NULL)
              g_print("Thread create failed!!");
-    }
+    } 
     updateStatusMessage(NULL); //set invisible
+    gdk_threads_add_idle(scReleaseThread, NULL); //it will unlock the mutex
 }
 
 /*
@@ -1433,6 +1510,7 @@ Refresh the treeview data and select the folder idnode (exception if idNode==-1)
 The treeview contains all the sub directories of your picture directory. 
 */
 static void refreshTree(){
+        g_print("refreshTree\n");
         /*clear pStore */
         GtkTreeSelection *pSelect = gtk_tree_view_get_selection (GTK_TREE_VIEW (pTree));
         g_signal_handlers_disconnect_by_func(G_OBJECT (pSelect), G_CALLBACK (treeSelectionChangedCB),NULL);
@@ -1491,7 +1569,7 @@ static int treeNewSelectionCB (gpointer user_data){
             //scrollTo the right location in the photowall
             int row2Scroll=getRowFromFolder(treeIdNodeSelected);
             if (row2Scroll==-1) row2Scroll=getRowFromFolder(getNextIdNodeNotEmpty(treeIdNodeSelected,NULL));
-            g_print("\nrow2Scroll%i",row2Scroll);
+            g_print("row2Scroll%i\n",row2Scroll);
             scroll2Row(row2Scroll,TOP);
             RowObj *rowObj=g_ptr_array_index(rowArray,row2Scroll+1);
             scSelectingFolderDisabled=TRUE;
@@ -1539,27 +1617,23 @@ Be carefull, the function is recursive.
 The return object must be freed by gtk_tree_path_free.
 */
 GtkTreePath *getTreePathFromidNode(int idNode, GtkTreeIter *parent){
-     //we don't have to declare a pointer to this struct, it is not typedef struct like all the others gtk object
     GtkTreePath *ret=NULL;
     GtkTreeIter iter;
-    gchar *_name;    
     int _idNode;
-    int _counter=0;
-    gchar *_fullPathName;
-    //gboolean iter_valid = gtk_tree_model_get_iter_first(pSortedModel, iter); //GTK_TREE_MODEL(pStore)
-    gboolean iter_valid=gtk_tree_model_iter_children (pSortedModel, &iter, parent); 
-    while (iter_valid){
-        gtk_tree_model_get(pSortedModel, &iter, BASE_NAME_COL, &_name, ID_NODE, &_idNode, FULL_PATH_COL, &_fullPathName,-1);//GTK_TREE_MODEL(pStore) , COUNTER,&_counter
-        //g_print("treepath%s",_name);
+    int _counter=0;    
+    gboolean found=gtk_tree_model_iter_children (pSortedModel, &iter, parent); 
+    while (found){
+        gtk_tree_model_get(pSortedModel, &iter, ID_NODE, &_idNode,-1);
+        //gtk_tree_model_get(pSortedModel, &iter, BASE_NAME_COL, &_name, ID_NODE, &_idNode, FULL_PATH_COL, &_fullPathName,-1);
+        //g_print("treepath%s",_name); for debug
         if (_idNode==idNode) {
-            //gtk_tree_store_set(pStore, &iter,BASE_NAME_COL, "lptlpt", ID_NODE, &_idNode, FULL_PATH_COL, "lptlpt", COUNTER, &_counter, -1); //for testing
-            ret=gtk_tree_model_get_path(pSortedModel, &iter); //GTK_TREE_MODEL(pStore)
+            ret=gtk_tree_model_get_path(pSortedModel, &iter); 
             return ret; //get out of the loop
         } else if (gtk_tree_model_iter_has_child (pSortedModel, &iter)){
             ret = getTreePathFromidNode(idNode,&iter);
             if (ret!=NULL) return ret;
         }
-        iter_valid = gtk_tree_model_iter_next(pSortedModel, &iter); //GTK_TREE_MODEL(pStore)
+        found = gtk_tree_model_iter_next(pSortedModel, &iter); 
     }
     return NULL;
 }
@@ -1787,6 +1861,53 @@ int howManySelected(void){
 }
 
 /*
+check the content type of the selection (photos or video)
+return NOTHING,ONLY_VIDEOS,ONLY_PHOTOS, MIX_PHOTOS_VIDEOS
+*/
+static int whatTypeIsSelected(void){
+    int ret =NOTHING; //default value
+    if (activeWindow == VIEWER) {
+        if (hasVideoExt(viewedFullPath)) return ONLY_VIDEOS;
+        else return ONLY_PHOTOS;
+    } 
+    if (activeWindow == ORGANIZER) { 
+        for (int i=0;i<photoArray->len;i++){    
+            PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,i);
+            if (pPhotoObj!=NULL &&pPhotoObj->selected) {
+                if (hasVideoExt(pPhotoObj->fullPath)){  //it's a video
+                    switch (ret) {
+                        case NOTHING:
+                            ret=ONLY_VIDEOS;
+                            break;
+                        case ONLY_VIDEOS:
+                            break;
+                        case ONLY_PHOTOS:
+                            ret=MIX_PHOTOS_VIDEOS;
+                            break;
+                        case MIX_PHOTOS_VIDEOS:
+                            break;
+                    }
+                } else{ //it's a photo
+                    switch (ret) {
+                        case NOTHING:
+                            ret=ONLY_PHOTOS;
+                            break;
+                        case ONLY_VIDEOS:
+                            ret=MIX_PHOTOS_VIDEOS;
+                            break;
+                        case ONLY_PHOTOS:                        
+                            break;
+                        case MIX_PHOTOS_VIDEOS:
+                            break;
+                    }
+                }            
+            }
+        }
+        return ret;
+    }
+}
+
+/*
 first selected photo found
 */
 static int firstSelected(void){
@@ -1845,12 +1966,14 @@ int findPhotoFromFullPath(char *fullPath){
     char *_file=g_path_get_basename(fullPath);
     GPtrArray *_fileSet=getDirSortedByDate(_path);
     int  i=0;
+    gboolean found=FALSE;
     while (i<_fileSet->len){
         FileObj *fileObj=g_ptr_array_index(_fileSet,i);
-        if (g_strcmp0(fileObj->name,_file) == 0) break;
+        if (g_strcmp0(fileObj->name,_file) == 0) {found=TRUE;break;}
         i++;
     }
     //i is the counter where the file is found in his dir
+    if (!found) {g_ptr_array_unref(_fileSet);return -1;} //exit if not found
     int idFolder= getFileNode(_path);
     int j=0,index=0;
     while (j<rowArray->len){
@@ -1869,18 +1992,21 @@ When UI has just finished to show the photoOrganizer window.
 We use it to start the filling of the photoWall.
 */
 static gboolean  windowMapCB (GtkWidget *widget, GdkEvent *event, gpointer data)  {
-    g_print("ready");
+    g_print("photo organizer ready\n");
     focusIndexPending=0;  //postponed the grab focus-> processed by the next run of scShowAllGtk      
     refreshPhotoArray(FALSE); //init the filling of the PhotoWall
-    int thumbnailsCounter=countFilesInDir(thumbnailDir,FALSE);
+    int thumbnailsCounter=countFilesInDir(thumbnailDir,FALSE,TRUE);
     if (((float)thumbnailsCounter/photosRootDirCounter)<0.25) thumbnailDialogInit(GTK_WINDOW(pWindow));//show the thumbnail dialogbox for less 25% of thumbnails of the picture directory
+    loadDirectories2Monitor();
+    startMonitor(); //start the Monitor Thread
     gtk_widget_hide(GTK_WIDGET(data)); //hide the waiting screen
 }
 
 
 static void windowDestroyCB(GtkWidget *pWidget, gpointer pData){
     scStopThread=TRUE; //it will stop the thread
-    g_print("\norganizer destroyed\n");
+    stopMonitor();//it will stop the monitor
+    g_print("organizer destroyed\n");
     gtk_window_close(GTK_WINDOW(_waitingScreen));
     g_application_quit(G_APPLICATION(app));
 }
@@ -1899,17 +2025,18 @@ int readRecursiveDir(const gchar *dirPath, GtkTreeIter *parent, int reset){
       while((pFileEntry = readdir(directory)) != NULL)   {
         if (g_strcmp0(pFileEntry -> d_name,"..") == 0 || g_strcmp0(pFileEntry -> d_name,".") == 0) continue;
         if (pFileEntry->d_type==DT_DIR) {            
-            g_print(" %s %ld -", pFileEntry -> d_name , pFileEntry -> d_ino);
-            gtk_tree_store_append (pStore, &child, parent);
+            //g_print(" %s %ld -", pFileEntry -> d_name , pFileEntry -> d_ino);
+            gtk_tree_store_append (pStore, &child, parent); //create a new entry in the store
             int _counter=0;
             char *_dirPath=g_strdup_printf ("%s/%s",dirPath,pFileEntry -> d_name);
+            //set the new entry with the folder name, path and idnode, the counter is preset to 0, it will be filled later
             gtk_tree_store_set (pStore, &child, BASE_NAME_COL,pFileEntry -> d_name, FULL_PATH_COL,_dirPath,ID_NODE,pFileEntry->d_ino,COUNTER,0,-1);           
             //recursivité
             readRecursiveDir(_dirPath, &child, FALSE); //the child becomes the parent of a lower level
             g_free (_dirPath);
         }  else {
             //only jpg and png and no hidden files for counting 
-            if ( !g_str_has_prefix(pFileEntry -> d_name,".") && (g_str_has_suffix(pFileEntry -> d_name, ".jpg") || g_str_has_suffix(pFileEntry -> d_name, ".JPG") || g_str_has_suffix(pFileEntry -> d_name, ".jpeg") || g_str_has_suffix(pFileEntry -> d_name, ".JPEG") || g_str_has_suffix(pFileEntry -> d_name, ".png") || g_str_has_suffix(pFileEntry -> d_name, ".PNG") )) { counterByDir++;  counterTotal++; }
+            if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name) || hasVideoExt(pFileEntry -> d_name))) { counterByDir++;  counterTotal++; }
         }
       }
       closedir(directory);
@@ -1924,7 +2051,8 @@ int readRecursiveDir(const gchar *dirPath, GtkTreeIter *parent, int reset){
 
 /* 
 Recursive function, scan/update the Treeview model.
-Parent=NULL to scan all the model and reset counters. 
+Parent=NULL to scan all the model to update the counters.
+the 2 arrays are cleared at the end of the process
 */
 void addCounters2Tree(GtkTreeIter *parent){
     //we don't have to declare a pointer to this struct, it is not typedef struct like all the others gtk object
@@ -1950,14 +2078,14 @@ void addCounters2Tree(GtkTreeIter *parent){
         iter_valid = gtk_tree_model_iter_next(GTK_TREE_MODEL(pStore), &iter); //GTK_TREE_MODEL(pStore)
     }
     if (parent==NULL){
-        g_print("addCounters2Tree finished");
+        g_print("addCounters2Tree finished\n");
         g_array_free (folderNodeArray,TRUE);
         g_array_free (folderCounterArray,TRUE);
     }
 }
 
 /*
-The 2 arrays are complementary  : folderNodeArray contains all the tree nodes (the sub directories) and folderCounterArray the number of files contained in this tree node. These 2 arrays are used in addCounters2Tree() and removed after.
+The 2 arrays are complementary  : folderNodeArray contains all the sub directories of the photoroot and folderCounterArray the number of files contained in this dir. These 2 arrays are used in addCounters2Tree() and removed after.
 */
 static int findCountersInArray(int idNode){
     int _idNode=-1;
@@ -2052,13 +2180,16 @@ static void scThreadStart(void *pointer){
     int position=-1;
     while (TRUE){
         g_usleep(25000); //temporization 25ms
+
+        G_LOCK(scMutex); //we lock the scrolling thread
+
         position = gtk_adjustment_get_value (scAdjustment);
         if (focusIndexPending!=-1){
             scFocusIndexPending=focusIndexPending;
             focusIndexPending=-1;
         }
         //test range >46 to minimize the number of check
-        if (abs(position-scLastPosition)>=((PHOTO_SIZE+MARGIN)/2) && !scMutex){ //changes occured 46 is the row size/2
+        if (abs(position-scLastPosition)>=((PHOTO_SIZE+MARGIN)/2) && !scWait){ //changes occured 46 is the row size/2
             if (scCheckMove(position)){ //check if it is a temporary, progressive or final scroll position
                 g_print("calcul rows to check,%i,%i\n",scLastPosition,position);
                 topRow = position/(PHOTO_SIZE + MARGIN);
@@ -2067,6 +2198,9 @@ static void scThreadStart(void *pointer){
                 j++;
             }
         }
+        
+        G_UNLOCK(scMutex); //we lock the scrolling thread
+        
         i++;
         if (i==1000000) i=0; //reinit after au dela du milion pour éviter les overflow
         if (scStopThread){ //stop the thread
@@ -2092,14 +2226,15 @@ Directories titles are managed. These widgets will be attached to their GTK pare
 If thumbnails need to be created, their creation are postponed to avoid grabfocus errors. 
 */
 static void scShowRows(int top){
+    g_print("scShowRows called");
     static int lastShowRowTop=-1;
+    int error=FALSE;
     if (top==-1) {lastShowRowTop=-1;g_print("scShowRows reset top=-1\n");return;} //reset the static var
     if (top==lastShowRowTop) return;
     if (rowArray->len==0)    { updateStatusMessage(g_strdup_printf("No Photos in %s !",photosRootDir)); return; }//no photos in photosrootdir
     //check already loaded
     //g_print("scShowRows%i\n", top  );
     int bottom=top+scRowsInPage;  
-    if (scMutex) g_print("multithread scMutex is TRUE"); //troubleshooting to see conflict between 2 threads
     int _top=(top<=1)?0:top-2; //+2 to get enough rows for the keyup gesture through grabfocus
     int _bottom=(bottom>=(int)(rowArray->len-3))?rowArray->len:bottom+2;//+2 to get enough rows for the keydown gesture through grabfocus
     g_print("bottom%i_bottom%i,rowArray->len%i\n",bottom,_bottom,rowArray->len);
@@ -2109,31 +2244,29 @@ static void scShowRows(int top){
             g_print("row to insert is %i, index is %i\n",i,rowObj->index);
             if (rowObj->index==-1)     {g_array_append_val(scWaitingLabels,i);
                                         g_print("insert row %i in waiting labels\n",i);}
-            if (rowObj->index>=0) insertImagesInRow(i,rowObj->idNode,rowObj->index,rowObj->hasMore);
-            if (scInterruptLoading) break;
+            if (rowObj->index>=0) error=!insertImagesInRow(i,rowObj->idNode,rowObj->index,rowObj->hasMore);
+            
             rowObj->loaded=WAITING;
+            if (error || scInterrupt) break;
         }
     }
-    g_print("inserts row in waiting array till row %i",_bottom);
-    //if error in insert we do a refreshphotowall the dir content has changed
-    if (scInterruptLoading){
-        scInterruptLoading=FALSE;
-        scMutex=TRUE;
-        gdk_threads_add_idle(scRefreshPhotoWall,NULL);
+    g_print("inserts row in waiting array till row %i\n",_bottom);
+    if (error) {
+        g_print("error in insertImagesInRow(), the dir content has changed"); 
         return;
     }
     
     lastShowRowTop=top;
     if (scWaitingImages->len!=0 || scWaitingLabels->len!=0){
-        if (scMutex) g_print("ERROR CONFLICT mutex is TRUE\n ");
-        scMutex=TRUE;//prevent the scroll thread from playing
+        scWait=TRUE;//prevent the scroll thread from playing
         gdk_threads_add_idle(scShowAllGtk,NULL);//Trigger the GTK widgets update in the gtk main thread
     }
+    
     //show the date in the status bar when we scroll the photowall
     RowObj *rowObj=g_ptr_array_index(rowArray,lastShowRowTop);
-    IntObj *rowIndexDate=malloc(sizeof(IntObj));
-    rowIndexDate->value=(rowObj->index<0)?lastShowRowTop+1:lastShowRowTop; //check if row is not a label row
-    gdk_threads_add_idle(scShowMessageDate,rowIndexDate); //Trigger the scShowMessageDate in the gtk main thread
+    int rowIndexDate=(rowObj->index<0)?lastShowRowTop+1:lastShowRowTop;    
+    gdk_threads_add_idle(scShowMessageDate,GINT_TO_POINTER(rowIndexDate)); //Trigger the scShowMessageDate in the gtk main thread
+
     //show Message Wait for new thumbnails
     if (scNewThumbnails2Create!=NULL && scNewThumbnails2Create->len>=12) { //1line of photos in basic screen
                 gdk_threads_add_idle(scShowMessageWait,NULL);
@@ -2146,54 +2279,57 @@ static void scShowRows(int top){
 
 /*
 Insert existing thumbnails in scWaitingImages to be added in Gtk later. New thumbnails will be added to scNewThumbnails2Create to be processed differently. Index is the index of the first photo of the row in its directory.
+Return FALSE if error in loading
 */
-static void insertImagesInRow(int row,int idNode,int index,int hasMore){
+static int insertImagesInRow(int row,int idNode,int index,int hasMore){
+    int ret=TRUE;
     if (scNewThumbnails2Create==NULL) scNewThumbnails2Create = g_ptr_array_new_with_free_func (g_free);
     static int lastIdNode=-1;
     static char *fullPath;
     static GPtrArray *_fileSet=NULL;
     int col=0;
+    //next call every static variable will be reset
+    if (idNode==-1){
+        lastIdNode=-1;
+        if (_fileSet != NULL) {
+            _fileSet=(GPtrArray *)(g_ptr_array_free(_fileSet,TRUE));
+        }
+        g_print("reset fileset\n");
+        return ret;
+    } 
     
-    if (idNode==-1){ lastIdNode=-1;return;} //next call every static variable will be reset
-    
-    g_print("insert row %i in waiting images\n",row);
+    g_print("insert row %i in waiting images",row);
     //get the dir
     if (lastIdNode!=idNode){
         lastIdNode=idNode;
         fullPath=getFullPathFromidNode(idNode, NULL);
-        if (_fileSet != NULL) {
-           for (int i=0;i<_fileSet->len;i++){    
-                FileObj *pFileObj=g_ptr_array_index(_fileSet,i);
-                g_free(pFileObj->name); //char alloc dynamic
-            }
-            g_ptr_array_unref(_fileSet);
-            _fileSet=NULL;
-        }
+        if (_fileSet != NULL) _fileSet=(GPtrArray *)g_ptr_array_free(_fileSet,TRUE);        
         _fileSet=getDirSortedByDate(fullPath); 
     }
     if (_fileSet!=NULL){ //null means getDirSortedByDate crashed because the dir has changed
         for (int i=index;i<(index+colMax);i++){
             if (i>=(_fileSet->len)) break;
-            FileObj *fileObj=g_ptr_array_index(_fileSet,i); 
-            GtkWidget *pImage = loadThumbnail(fileObj,fullPath);
+            FileObj *fileObj=g_ptr_array_index(_fileSet,i);
+            gchar *fullPathFile= g_strdup_printf("%s/%s",fullPath,fileObj->name);
+            GtkWidget *pImage = loadThumbnail(fullPathFile, idNode);
             int nullImage=FALSE;
             if (pImage==NULL) {nullImage=TRUE; pImage=gtk_label_new("");} //empty image, we use gtkLabel as a wrapper
             IntObj *_nullImage=malloc(sizeof(IntObj)); _nullImage->value=nullImage;
             g_object_set_data_full (G_OBJECT(pImage), "nullImage", _nullImage,(GDestroyNotify) g_free);
             IntObj *rowIndex=malloc(sizeof(IntObj)); rowIndex->value=row; 
             g_object_set_data_full (G_OBJECT(pImage), "row", rowIndex,(GDestroyNotify) g_free);
-            IntObj *idNodeFile=malloc(sizeof(IntObj)); idNodeFile->value=fileObj->idNode; 
-            g_object_set_data_full (G_OBJECT(pImage), "idNodeFile", idNodeFile,(GDestroyNotify) g_free);
+            IntObj *iDir=malloc(sizeof(IntObj)); iDir->value=idNode; 
+            g_object_set_data_full (G_OBJECT(pImage), "iDir", iDir,(GDestroyNotify) g_free);
             LongIntObj *time=malloc(sizeof(LongIntObj)); time->value=fileObj->time; 
             g_object_set_data_full (G_OBJECT(pImage), "time", time,(GDestroyNotify) g_free);
-            g_object_set_data_full (G_OBJECT (pImage),"fullPath",g_strdup_printf("%s/%s",fullPath,fileObj->name),(GDestroyNotify) g_free);
+            g_object_set_data_full (G_OBJECT (pImage),"fullPath",fullPathFile,(GDestroyNotify) g_free);
             g_ptr_array_add (scWaitingImages, pImage);
             if (nullImage) {
                 //store the data to create the thumbnail later
                 PhotoObj *newThumbnail=malloc(sizeof(PhotoObj));
                 newThumbnail->row=row;
                 newThumbnail->col=col;
-                newThumbnail->idNode=fileObj->idNode;
+                newThumbnail->iDir=idNode;
                 newThumbnail->lastModDate=fileObj->time;
                 newThumbnail->fullPath=g_strdup_printf("%s/%s",fullPath,fileObj->name);
                 //other fields are useless for this process
@@ -2202,25 +2338,22 @@ static void insertImagesInRow(int row,int idNode,int index,int hasMore){
             col++;
         }
         if (!hasMore) {
-            for (int i=0;i<_fileSet->len;i++){    
-                FileObj *pFileObj=g_ptr_array_index(_fileSet,i);
-                g_free(pFileObj->name); //char alloc dynamic
-            }
-            g_ptr_array_unref(_fileSet);
-            _fileSet=NULL;
+            if (_fileSet != NULL) _fileSet=(GPtrArray *)g_ptr_array_free(_fileSet,TRUE);
             lastIdNode=-1; //to clean the function
         }
+        ret=TRUE;
     } else {
         //clear scNewThumbnails2Create, scWaitingImages
         if (scWaitingImages->len>0){
-            g_ptr_array_free (scWaitingImages,FALSE); //don't remove the elements otherwise the previous pImage will freed and can't be used by gtk
+            g_ptr_array_free (scWaitingImages,FALSE); //don't remove the elements otherwise the previously loaded pImage will freed and can't be used by gtk
             scWaitingImages = g_ptr_array_new_with_free_func (NULL);
         }
-        g_ptr_array_free(scNewThumbnails2Create,TRUE); scNewThumbnails2Create=NULL;
+        scNewThumbnails2Create=(GPtrArray *)g_ptr_array_free(scNewThumbnails2Create,TRUE);
         
-        scInterruptLoading=TRUE; //break scShowRows()
+        ret=FALSE; //means an error happens, so break scShowRows()
     }
     
+    return ret;
 }
 
 //in insertImagesInRow, we use a statics variable which need to be reset when we refresh the photoarray
@@ -2231,8 +2364,10 @@ static void resetCurrentFilesInFolder(void){
 /*
 Attach the waiting widgets to the photowall at the correct place.
 It removes also the widgets which have disappeared from the visible part of the photowall.
+Runs in the gtk thread. 
 */
 static int scShowAllGtk(gpointer user_data){
+    g_print("scShowAllGtk called\n");
     //add image to rows
     int row=-1;
     int col=-1;
@@ -2242,8 +2377,8 @@ static int scShowAllGtk(gpointer user_data){
         GtkWidget *pImage=g_ptr_array_index(scWaitingImages,i);    
         IntObj *_row=g_object_get_data (G_OBJECT(pImage), "row");
         row=_row->value;
-        IntObj *_idNodeFile=g_object_get_data (G_OBJECT(pImage), "idNodeFile");
-        int idNodeFile=_idNodeFile->value;
+        IntObj *_iDir=g_object_get_data (G_OBJECT(pImage), "iDir");
+        int iDir=_iDir->value;
         LongIntObj *_time=g_object_get_data (G_OBJECT(pImage), "time");
         int time=_time->value;
         char *fullPath=g_object_get_data (G_OBJECT(pImage), "fullPath");
@@ -2255,7 +2390,7 @@ static int scShowAllGtk(gpointer user_data){
         IntObj *_nullImage=g_object_get_data (G_OBJECT(pImage), "nullImage");
         if (_nullImage->value) {//g_free(pImage);
                                 pImage=NULL;}
-        insertPhotoWithImage(pImage, col, row, idNodeFile, fullPath, time);
+        insertPhotoWithImage(pImage, col, row, iDir, fullPath, time);
     }
     //clean scWaitingImages
     if (scWaitingImages->len>0){
@@ -2287,16 +2422,19 @@ static int scShowAllGtk(gpointer user_data){
     rowKeepLast=lastRowIndex+scRowsInPage*2.5;
     g_print("lastRowIndex %i\n",lastRowIndex);
     if (lastRowIndex!=-1){
-        int k=0;
+        int k=0, w=-1;
         int focusRow=whichRowHasTheFocus();
-        //TODOlptlpt Exclude rows de selection
+        int focusRowPending=getPhotoRow(scFocusIndexPending);
+        /*Exclude selection rows from cleaning*/
         GArray *_rowsSelected=rowsSelected();    
         while (TRUE){
             if (k > (photoArray->len-1) || photoArray->len == 0 ) break;
             PhotoObj *pPhotoObj=g_ptr_array_index(photoArray, k);
             //exclude focusRow and rows where we can find a selection
-            if (pPhotoObj!=NULL && (pPhotoObj->row < rowKeepFirst || pPhotoObj->row > rowKeepLast) && pPhotoObj->row!=focusRow && !isInIntegerArray(_rowsSelected,pPhotoObj->row) ){
-                g_print("clean row%i-",pPhotoObj->row);
+            //for focusRow we also exclude a range of 2up and 2 down to don't break with key up and down features 
+            if (pPhotoObj!=NULL && (pPhotoObj->row < rowKeepFirst || pPhotoObj->row > rowKeepLast) && ( pPhotoObj->row < focusRow-2 || pPhotoObj->row > focusRow+2 ) && pPhotoObj->row!=focusRowPending && !isInIntegerArray(_rowsSelected,pPhotoObj->row) ){
+                if (w!=pPhotoObj->row) g_print("clean row%i-",pPhotoObj->row);
+                w=pPhotoObj->row;
                 if (GTK_IS_WIDGET(pPhotoObj->pEventBox)){
                     GtkWidget *pOverlay=gtk_widget_get_parent(pPhotoObj->pEventBox);
                     removeAllWidgets(GTK_CONTAINER(pOverlay)); //remove the children of the overlay 
@@ -2323,7 +2461,7 @@ static int scShowAllGtk(gpointer user_data){
     gtk_widget_show_all(photoWall); //set the new widget visibles
     
     if (scFocusIndexPending!=-1){
-        g_print("changeFocus requested by scShowAllGtk");
+        g_print("changeFocus requested by scShowAllGtk\n");
         GArray *_array=g_array_new(FALSE, FALSE, sizeof (gint));
         g_array_append_val(_array,scFocusIndexPending);
         ScrollType _top=TOP;
@@ -2340,36 +2478,52 @@ static int scShowAllGtk(gpointer user_data){
 
 /*
 If thumbnails don't exist or are out of date, we must build them on the fly
+and we load the new thumbnails in the array scWaitingNewThumbnails. They will be attached to GTK container later
 */
 static void scCreateNewThumbnails(void){
     GdkPixbuf *pBuffer1;
     for(int i=0;i<scNewThumbnails2Create->len;i++){
+        if (scInterrupt) break;
+        pBuffer1=NULL;
         PhotoObj *newThumbnail=g_ptr_array_index(scNewThumbnails2Create,i);
         #if defined(LINUX) || defined(WIN)
     	int _size=PHOTO_SIZE;
     	#else 
     	int _size=PHOTO_SIZE*2;
     	#endif
-        int resCreate=createThumbnail(newThumbnail->fullPath,newThumbnail->idNode, thumbnailDir, _size);
-        gchar *fullPathThumbnail =g_strdup_printf ("%s/%i",thumbnailDir,newThumbnail->idNode);
+        int resCreate=createThumbnail(newThumbnail->fullPath,newThumbnail->iDir, thumbnailDir, _size, newThumbnail->lastModDate);
+        
+        gchar *fullPathThumbnail =getThumbnailPath (thumbnailDir,newThumbnail->iDir,newThumbnail->fullPath);
+        
         if (resCreate == PASSED_CREATED){
             pBuffer1 = gdk_pixbuf_new_from_file_at_size(fullPathThumbnail,PHOTO_SIZE,PHOTO_SIZE,NULL);
-            g_free(fullPathThumbnail);
+            g_free(fullPathThumbnail);       
         } else {
-            //load Fake image
-            g_print("load fake image");
-            gchar *fullPathNoImage =g_strdup_printf ("%s/%s",resDir,noImageJpg);
-            pBuffer1 = gdk_pixbuf_new_from_file_at_size(fullPathNoImage,PHOTO_SIZE,PHOTO_SIZE,NULL);
-            g_free(fullPathNoImage);
-            g_print("/fin/");
+            if (resCreate == ERR_FFMPEGTHUMBNAILER_DOESNT_EXIST) { 
+                updateStatusMessage("Please install ffmpeg with \"sudo apt-get install ffmpeg\" to get video thumbnails.");
+                //load ERROR image
+                g_print("load thumbnail ERROR");
+                gchar *fullPathNoVideo =g_strdup_printf ("%s/%s",resDir,noVideoPng);
+                pBuffer1 = gdk_pixbuf_new_from_file_at_size(fullPathNoVideo,PHOTO_SIZE,PHOTO_SIZE,NULL);
+                g_free(fullPathNoVideo);
+            } else {
+                //load ERROR image
+                g_print("load thumbnail ERROR");
+                gchar *fullPathNoImage =g_strdup_printf ("%s/%s",resDir,noImagePng);
+                pBuffer1 = gdk_pixbuf_new_from_file_at_size(fullPathNoImage,PHOTO_SIZE,PHOTO_SIZE,NULL);
+                g_free(fullPathNoImage);
+                g_print("/fin/");
+            }
         }
-        GtkWidget *pImage = gtk_image_new_from_pixbuf (pBuffer1);
-        IntObj *rowIndex=malloc(sizeof(IntObj)); rowIndex->value=newThumbnail->row; 
-        g_object_set_data_full (G_OBJECT(pImage), "row", rowIndex,(GDestroyNotify) g_free);
-        IntObj *colIndex=malloc(sizeof(IntObj)); colIndex->value=newThumbnail->col; 
-        g_object_set_data_full (G_OBJECT(pImage), "col", colIndex,(GDestroyNotify) g_free);
-        g_ptr_array_add (scWaitingNewThumbnails, pImage);
-        g_object_unref(pBuffer1);
+        if (pBuffer1){
+            GtkWidget *pImage = gtk_image_new_from_pixbuf (pBuffer1);
+            IntObj *rowIndex=malloc(sizeof(IntObj)); rowIndex->value=newThumbnail->row; 
+            g_object_set_data_full (G_OBJECT(pImage), "row", rowIndex,(GDestroyNotify) g_free);
+            IntObj *colIndex=malloc(sizeof(IntObj)); colIndex->value=newThumbnail->col; 
+            g_object_set_data_full (G_OBJECT(pImage), "col", colIndex,(GDestroyNotify) g_free);
+            g_ptr_array_add (scWaitingNewThumbnails, pImage);
+            g_object_unref(pBuffer1);
+        }
     }
     g_ptr_array_free(scNewThumbnails2Create,TRUE); scNewThumbnails2Create=NULL;
 }
@@ -2405,8 +2559,9 @@ static int scUpdateNewThumbnailInGtk(gpointer user_data){
         scWaitingNewThumbnails = g_ptr_array_new_with_free_func (NULL);
     }
     
-    //release MUTEX
-    scMutex=FALSE;   //permit the scroll to play again
+    //release Thread loop
+    if (scInterrupt) scInterrupt=FALSE; //permit to the postponed func in the scrolling thread to play again
+    scWait=FALSE;   //permit the scrolling loop thread to play again
     scHideMessageWait(NULL); //hide "waiting for thumbnails creation"
     return FALSE;
 }
@@ -2421,17 +2576,15 @@ Show the date in the status bar when we scroll the photowall
 parameter is the row which we want to show the date
 */
 static int scShowMessageDate(gpointer user_data){
-    IntObj *row=(IntObj *) user_data;
-    //g_print("scShowMessageDate%i",row->value);
-    int index=getPhotoIndex(0, row->value);
+    if (scInterrupt) return FALSE;
+    int row=GPOINTER_TO_INT(user_data);
+    //g_print("scShowMessageDate%i",row);
+    int index=getPhotoIndex(0, row);
     PhotoObj *photo=g_ptr_array_index(photoArray,index);
     if (photo==NULL) return FALSE; //it can happen when we remove all the files of a directory
-    //photo->lastModDate;
-    //long int _time=pPhotoObj->lastModDate;
     char _date[20];
-    strftime(_date, 20, "%Y/%m/%d %H:%M:%S", localtime(&photo->lastModDate)); 
+    strftime(_date, 20, "%Y/%m/%d %H:%M:%S", localtime(&(photo->lastModDate))); 
     updateScrollingDate(_date);
-    free(row); //free after malloc
     return FALSE;
 }
 
@@ -2439,8 +2592,9 @@ static int scShowMessageDate(gpointer user_data){
 Show to the UI that the process of creation thumbnails is pending.
 */
 static int scShowMessageWait(gpointer user_data){
+    if (scInterrupt) return FALSE;
     const gchar *txt=gtk_label_get_text(GTK_LABEL(pStatusMessage));
-    g_print("\nscShowMessageWait%s\n",txt);
+    g_print("scShowMessageWait%s\n",txt);
     scBeforeMessageWait=g_strdup(txt);
     updateStatusMessage("Please wait for the creation of thumbnails from images!");
     while (gtk_events_pending ()) gtk_main_iteration(); //consume all the events before doing the select
@@ -2452,9 +2606,21 @@ Clear the message when the process is completed.
 */
 static int scHideMessageWait(gpointer user_data){
     const char *text=gtk_label_get_text(GTK_LABEL(pStatusMessage));
-    if (g_strcmp0(text,"Please wait for the creation of thumbnails from images!") == 0) {updateStatusMessage(scBeforeMessageWait); g_print("\nscHideMessageWait\n");}
+    if (g_strcmp0(text,"Please wait for the creation of thumbnails from images!") == 0) {updateStatusMessage(scBeforeMessageWait); g_print("scHideMessageWait\n");}
     return FALSE;
 }
+
+/*
+unlock the mutex to release the scrolling thread loop
+*/
+static int scReleaseThread(gpointer user_data){
+    scInterrupt=FALSE;
+    G_UNLOCK(scMutex);
+    g_print("G_UNLOCK(scMutex)\n");
+    return FALSE;
+}
+
+
 
 /*
 In the changefocus function we check if the directory of the focused photo has changed. In this case, we select the new directory in the treeview. 
@@ -2476,14 +2642,43 @@ static void scSelectFolder(int idNode){
             //select the cell
             GtkTreeSelection *selection =gtk_tree_view_get_selection (GTK_TREE_VIEW(pTree));
             gtk_tree_selection_select_path(selection,treePath);
-            //gtk_tree_view_set_cursor (GTK_TREE_VIEW(pTree),treePath,NULL,FALSE); //set cursor does a select and scroll but more control with scroll to cell
-            //scroll to the selected cell if not displayed
-            gtk_tree_view_scroll_to_cell (GTK_TREE_VIEW(pTree),treePath,NULL,TRUE,1,1); 
-            if (treePath) gtk_tree_path_free(treePath); 
+            //gtk_tree_view_set_cursor (GTK_TREE_VIEW(pTree),treePath,NULL,FALSE); //set cursor does a select and scroll but we have more control with scroll to cell
+            //scroll to the selected cell if cell is not visible
+            gtk_tree_view_scroll_to_cell (GTK_TREE_VIEW(pTree),treePath,NULL,TRUE,1,1);             
             treeIdNodeSelected=idNode;
             treeDirSelected=getFullPathFromidNode(idNode, NULL); //update the treeDirSelected used in Diologs function
+            gtk_tree_path_free(treePath); 
         }
     }
+}
+
+/*
+We clean and remove the content of temporary scrolling arrays 
+*/
+static void scCleanArrays(void){
+    
+    if (scNewThumbnails2Create!=NULL && scNewThumbnails2Create->len>0) {
+        g_ptr_array_free(scNewThumbnails2Create,TRUE);
+        scNewThumbnails2Create=NULL;
+    }
+    //usually we don't remove the elements otherwise the previously loaded pImage will freed and can't be used by gtk but we use this function in an interruptions process so we need to free them
+    if (scWaitingImages->len>0){
+        g_ptr_array_set_free_func(scWaitingImages,(GDestroyNotify)gtk_widget_destroy);
+        g_ptr_array_free (scWaitingImages,TRUE);     
+        scWaitingImages = g_ptr_array_new_with_free_func (NULL);
+    }
+    if (scWaitingLabels->len>0){
+        g_array_free(scWaitingLabels, TRUE);
+        scWaitingLabels = g_array_new (FALSE, FALSE, sizeof (gint));
+    }
+    //usually we don't remove the elements otherwise the previously loaded pImage will freed and can't be used by gtk but we use this function in an interruptions process so we need to free them
+    if (scWaitingNewThumbnails->len>0){
+        g_ptr_array_set_free_func(scWaitingNewThumbnails,(GDestroyNotify)gtk_widget_destroy);
+        g_ptr_array_free (scWaitingNewThumbnails,TRUE); //don't remove the elements otherwise the previous pImage will freed and can't be used by gtk
+        scWaitingNewThumbnails = g_ptr_array_new_with_free_func (NULL);
+    }
+
+
 }
 
 static void createMenuTree(void){
@@ -2572,7 +2767,7 @@ static int reClickSameFolder(gpointer user_data){
     if (!expandCollapseTreePending){
         expandCollapseTreePending=FALSE;
         g_print("reclick on the same folder");
-        treeNewSelectionCB(NULL); //we force the selection change
+        treeNewSelectionCB(NULL); //we force the selection to change
     }
     return FALSE; //stop repetition
 }
@@ -2608,7 +2803,19 @@ void refreshPhotoWall(GtkWidget* widget, gpointer data){
         }
     } else {
         int newFocus=findPhotoFromFullPath(fullPath);
-        focusIndexPending=newFocus;
+        if (newFocus!=-1){
+            /*to be sure to have something in the new focus we force an empty create that will be refreshed later*/
+            int col=getPhotoCol(newFocus);
+            int row=getPhotoRow(newFocus);
+            gchar *dirName=g_path_get_dirname (fullPath);
+            int iDir=getFileNode(dirName);
+            if (dirName) g_free(dirName);
+            int time=getFileTime(fullPath);
+            insertPhotoWithImage(NULL, col, row, iDir, fullPath, time);
+            g_print("\nrefreshPhotoWall newfocus %i col %i,row%i\n", newFocus, col, row);
+            focusIndexPending=newFocus;
+            newFocusFromRefreshPhotoWall=TRUE;
+        }
     }
     updateStatusMessage("Data has been refreshed!");
 }
@@ -2632,7 +2839,7 @@ static void createPopupMenu(void){
     GtkWidget *pSubMenu;
     GtkWidget *pMenuItem;
     GFile *pFile;
-    GList *listApp, *l;
+    GList *listApp, *l,  *listAppVideo;
     GAppInfo *appInfo;
     
     pMenuItem = gtk_menu_item_new_with_label("Refresh");
@@ -2643,7 +2850,10 @@ static void createPopupMenu(void){
     pSubMenu = gtk_menu_new();
     
     #ifdef LINUX
-    listApp=g_app_info_get_all_for_type("image/jpeg"); //LINUX uses mime types
+    //LINUX uses mime types
+    listApp=g_app_info_get_all_for_type("image/jpeg"); //photos
+    listAppVideo=g_app_info_get_all_for_type( "video/mp4"); //videos
+    listApp=g_list_concat(listApp,listAppVideo);
     //add open a new terminal with echo photoname and cd in the dir of the photo
     appInfo = g_app_info_create_from_commandline("echo toto",
                                              "Terminal",
@@ -2657,7 +2867,10 @@ static void createPopupMenu(void){
     listApp=g_list_insert (listApp, appInfo, 1);
     
     #elif OSX    
-    listApp=g_app_info_get_all_for_type("public.jpeg"); //OSX uses UTI names
+    //OSX uses UTI names
+    listApp=g_app_info_get_all_for_type("public.jpeg"); // photos
+    listAppVideo=g_app_info_get_all_for_type( "public.mpeg-4"); //videos
+    listApp=g_list_concat(listApp,listAppVideo);
     
     char *appExe=g_strdup_printf("%s","Terminal");
     pMenuItem = gtk_menu_item_new_with_label(appExe);
@@ -2710,7 +2923,7 @@ static void createPopupMenu(void){
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(pMenuItem), pSubMenu);   
     
     pMenuItem = gtk_menu_item_new_with_label("Properties");
-    g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(showExifDialog),NULL);
+    g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(showPropertiesDialog),NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(pMenuPopup), pMenuItem);
 
     pSubMenu = gtk_menu_new();
@@ -2744,12 +2957,25 @@ static void createPopupMenu(void){
 
 
 static void openWithCB(GtkWidget* widget, gpointer data){
+    
     g_print("openWithCB");
     #ifdef LINUX
     GAppInfo *appInfo=data;
-    char *appName=g_app_info_get_name(appInfo);
+    const char *appName=g_app_info_get_name(appInfo);     
+    const char **mimeTypes=g_app_info_get_supported_types(appInfo);
+    int i=0;
+    int appType=PHOTO_APP; //default option Type
+    while (mimeTypes && mimeTypes[i] )  {
+        //is it a mp4 option?
+        if (g_str_has_prefix(mimeTypes[i], "video/mp4"))  {
+            appType = VIDEO_APP;
+            break;
+        }
+        i++;
+    } 
     #elif OSX
     char *appName=data;
+    //TODO handle the difference between photo and video apps
     #elif WIN
     //TODO
     #endif
@@ -2796,38 +3022,65 @@ static void openWithCB(GtkWidget* widget, gpointer data){
         g_string_free(fileList, TRUE  );
     }   else if (g_strcmp0(appName,"Google Maps") == 0){
         g_print("google maps\n");
-        char *gps=showExifDialog(FALSE); //gps data are reformatted to fit to google maps
-        if (gps!=NULL){ 
-        #ifdef LINUX
-            char *cmd = g_strdup_printf("xdg-open \"http://www.google.com/maps/place/%s\"",g_strescape(gps,"°")); 
-        #elif OSX
-            char *cmd =g_strdup_printf ("open \"http://www.google.com/maps/place/%s\"",g_strescape(gps,"°"));
-        #elif WIN
-            char *cmd =g_strdup_printf ("echo google maps not supported on windows.");
-        #endif
-            //g_print("\ncmd %s",cmd);
-            g_spawn_command_line_async (cmd, NULL);
-            g_free(cmd);
+        char *_fullPath=NULL;
+        if (activeWindow == VIEWER)         
+            _fullPath=viewedFullPath;
+        if (activeWindow == ORGANIZER) {
+            int i=whichPhotoHasTheFocus();
+            if (i!=-1) {
+                PhotoObj *_pPhotoObj=g_ptr_array_index(photoArray,i); 
+                _fullPath=_pPhotoObj->fullPath;
+            }       
+        } 
+        if (hasVideoExt(_fullPath)){
+            updateStatusMessage("just photos can run the google map option!");            
         } else {
-            updateStatusMessage("No GPS data in the photo!");
+            char *gps=getGPSData(_fullPath); //gps data are reformatted to fit to google maps
+            if (gps!=NULL){ 
+            #ifdef LINUX
+                char *cmd = g_strdup_printf("xdg-open \"http://www.google.com/maps/place/%s\"",g_strescape(gps,"°")); 
+            #elif OSX
+                char *cmd =g_strdup_printf ("open \"http://www.google.com/maps/place/%s\"",g_strescape(gps,"°"));
+            #elif WIN
+                char *cmd =g_strdup_printf ("echo google maps not supported on windows.");
+            #endif
+                //g_print("\ncmd %s",cmd);
+                g_spawn_command_line_async (cmd, NULL);
+                g_free(cmd);
+            } else {
+                updateStatusMessage("No GPS data in the photo!");
+            }        
         }
     }   else {
-        	#ifdef LINUX
-        	g_app_info_launch (appInfo,l, NULL, NULL);
-        	#elif OSX
-        	GFile *pFile = g_list_first(l)->data;
-        	GString *fileList= g_string_new(NULL);
-        	while (l != NULL)   {
-            	pFile=l->data;
-            	g_string_append_printf(fileList," \"%s\"", g_file_get_path(pFile));
-            	l = l->next;
-        	}
-        	char *cmd =g_strdup_printf ("open -a \"%s\" %s",appName, fileList->str); 
-        	g_spawn_command_line_async (cmd, NULL);
-            g_free(cmd);
-        	#elif WIN
-        	#endif
+        #ifdef LINUX
+        //check NOTHING,ONLY_VIDEOS,ONLY_PHOTOS, MIX_PHOTOS_VIDEOS before running the option
+        int selectionType=whatTypeIsSelected();
+        if ((selectionType==ONLY_PHOTOS && appType == PHOTO_APP) ||
+            (selectionType==ONLY_VIDEOS && appType == VIDEO_APP)){
+            g_app_info_launch (appInfo,l, NULL, NULL);
+
+        } else
+            if (appType==PHOTO_APP)
+                updateStatusMessage("just photos can run these options!");
+            else
+                updateStatusMessage("just videos can run these options!");
+
+        #elif OSX
+        GFile *pFile = g_list_first(l)->data;
+        GString *fileList= g_string_new(NULL);
+        while (l != NULL)   {
+            pFile=l->data;
+            g_string_append_printf(fileList," \"%s\"", g_file_get_path(pFile));
+            l = l->next;
         }
+        char *cmd =g_strdup_printf ("open -a \"%s\" %s",appName, fileList->str); 
+        g_spawn_command_line_async (cmd, NULL);
+        g_free(cmd);
+
+        #elif WIN
+
+        #endif
+    }
 }
 //Command_line_arguments_ compliant with geary or thunderbird in LINUX
 //xdg-email --attach "/home/leon/Cloud Pictures/2003-08equihen/DSCN0282.JPG"
@@ -2887,8 +3140,11 @@ static void changeFileDateWithExif(void){
         for (int i=0;i<photoArray->len; i++){
             PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,i);
             if (pPhotoObj!=NULL && pPhotoObj->selected) {
-                if (count==0) firstFullPath=g_strdup(pPhotoObj->fullPath);
-                g_string_append_printf(fileList," \"%s\"",pPhotoObj->fullPath); count++;
+                if (count==0) firstFullPath=g_strdup(pPhotoObj->fullPath); //for focusreset
+                if (hasExifExt){  //only for jpeg
+                    g_string_append_printf(fileList," \"%s\"",pPhotoObj->fullPath);
+                    count++;
+                }               
             }
         }
     }
@@ -2902,12 +3158,12 @@ static void changeFileDateWithExif(void){
             g_print ("-error: %s\n", err->message);
             updateStatusMessage("Please install jhead with \"sudo apt-get install jhead\" to get this option.");
             g_clear_error(&err);
-        } else if (stdErr[0]!='\0'){ 
+        } else if (stdErr[0]!='\0' && !strstr(stdErr,"Nonfatal")){ 
             updateStatusMessage(g_strdup_printf("error: %s.",stdErr));        
         } 
         else {//done
             if (activeWindow == VIEWER){
-                GtkWidget *dialog = gtk_message_dialog_new (GTK_WINDOW(pWindowViewer),GTK_DIALOG_DESTROY_WITH_PARENT,
+                GtkWidget *dialog = gtk_message_dialog_new (GTK_WINDOW(winViewer),GTK_DIALOG_DESTROY_WITH_PARENT,
                 GTK_MESSAGE_INFO, GTK_BUTTONS_OK,"%s", "File's date changed for the current file.");
                 gtk_dialog_run (GTK_DIALOG (dialog));
                 gtk_widget_destroy (dialog);

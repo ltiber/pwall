@@ -9,5 +9,8 @@ make:
     #flatpak-builder --repo=repo-pwall --force-clean build-dir org.pwall.Pwall.json
     #flatpak --user remote-add --no-gpg-verify repo-pwall repo-pwall
     #flatpak --user install repo-pwall org.pwall.Pwall
+    #flatpak --user uninstall org.pwall.Pwall
+    #flatpak run  org.pwall.Pwall
+
 
 

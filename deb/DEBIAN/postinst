@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#postinst script for the debian package
+#remove all the thumbnails of the last version, they are not compliant
+rm -f ~/.pwall/mini/* 1>/dev/null 2>/dev/null
+exit 0
+
+

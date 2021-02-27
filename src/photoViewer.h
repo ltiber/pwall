@@ -1,12 +1,9 @@
 //photoViewer header
 
 //public function
-void photoViewerInit(GtkWindow *parent, int index, int monitor);
-void deleteInViewer(void);
-void moveInViewer(void);
-void updateStatusMessageViewer(char *value);
+void connectWinPhotoHandler();
+void disconnectWinPhotoHandler();
+void photoWidgetInit();
+int photoWidgetLoad(int index);
 
-//public var
-extern char *viewedFullPath;
-extern int organizerNeed2BeRefreshed;
-extern GtkWidget *pWindowViewer;
+

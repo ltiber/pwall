@@ -24,6 +24,7 @@ typedef struct ThreadParamObj {
 static void windowDestroyCB(GtkWidget *pWidget, gpointer pData);
 static gboolean fillProgressBar (gpointer   user_data);
 static gboolean  buttonPressCB (GtkWidget *event_box, GdkEventButton *event, gpointer data);
+static gboolean  checkOneFolderCB (GtkWidget *event_box, GdkEventButton *event, gpointer data);
 static void *heavyWork(void *pointer);
 static void startThread(void);
 static int followupCB(char *value);
@@ -31,9 +32,12 @@ static int resetStatusCB (gpointer user_data);
 static int resetButtonLabel(gpointer user_data);
 static int followup2CB(char *value);
 static int completedThreadLauncherCB (gpointer user_data);
+static gboolean  windowMapCB (GtkWidget *widget, GdkEvent *event, gpointer data);
+static void removeThumbnails(const gchar *dirPath);
+
 
 //global data 
-static GtkWidget *pProgressBar, *pLabelStatus, *pButton, *pWindow;
+static GtkWidget *pProgressBar, *pLabelStatus, *pButton, *pWindow, *checkForceClean, *checkOneFolder;
 static int cancelRunning=FALSE;
 static int state=INIT;
 static GThread  *pThread; 
@@ -46,6 +50,8 @@ void thumbnailDialogInit(GtkWindow *parent){
     GtkWidget *pVBox, *pLabelTitle;
 
 	pWindow = gtk_window_new(GTK_WINDOW_TOPLEVEL);	
+    g_signal_connect(G_OBJECT(pWindow),"map-event",G_CALLBACK(windowMapCB), NULL); 
+
 	gtk_window_set_position(GTK_WINDOW(pWindow), GTK_WIN_POS_CENTER); //default position
     gtk_window_set_default_size(GTK_WINDOW(pWindow), 450, 100); //default size
 
@@ -67,8 +73,38 @@ void thumbnailDialogInit(GtkWindow *parent){
 
     gtk_box_pack_start(GTK_BOX(pVBox), pLabelTitle, FALSE, FALSE, 0); 
 
+    // checkbox for force clean
+    checkForceClean= gtk_check_button_new_with_label("Force Clean");
+    g_object_set(checkForceClean, "margin-top", 20, NULL);
+    g_object_set(checkForceClean, "margin-bottom", 20, NULL);
+    g_object_set(checkForceClean, "margin-left", 20, NULL);
+    gtk_box_pack_start(GTK_BOX(pVBox), checkForceClean, FALSE, FALSE, 0);
+    gtk_widget_set_name(checkForceClean,"thumbnailExplanation"); //to get larger font
+    //gtk_widget_set_can_default (checkForceClean,FALSE);
+    
+    checkOneFolder=gtk_check_button_new_with_label("Limit the processing to one Folder");
+    g_object_set(checkOneFolder, "margin-top", 20, NULL);
+    g_object_set(checkOneFolder, "margin-bottom", 20, NULL);
+    g_object_set(checkOneFolder, "margin-left", 20, NULL);
+    gtk_box_pack_start(GTK_BOX(pVBox), checkOneFolder, FALSE, FALSE, 0);
+    gtk_widget_set_name(checkOneFolder,"thumbnailExplanation"); //to get larger font
+    g_signal_connect (G_OBJECT (checkOneFolder),"button-press-event",G_CALLBACK (checkOneFolderCB), NULL); //click
+    
+
+        // pButton
+    pButton = gtk_button_new_with_label("Start/Stop MProgress");
+    resetButtonLabel(NULL);
+    g_object_set(pButton, "margin-top", 20, NULL);                                    
+    g_object_set(pButton, "margin-left", 80, NULL);
+    g_object_set(pButton, "margin-right", 80, NULL);
+    g_object_set(pButton, "margin-bottom", 20, NULL);                                    
+    gtk_box_pack_start(GTK_BOX(pVBox), pButton, FALSE, FALSE, 0);    
+    g_signal_connect (G_OBJECT (pButton),"button-press-event",G_CALLBACK (buttonPressCB), NULL); //click
+    //gtk_widget_set_can_default (pButton,TRUE);
+    
     /*Create a progressbar and add it to the window*/
     pProgressBar = gtk_progress_bar_new ();
+    g_object_set(pProgressBar, "margin-top", 20, NULL);
     g_object_set(pProgressBar, "margin-left", 10, NULL);
     g_object_set(pProgressBar, "margin-right", 10, NULL);
 
@@ -79,17 +115,8 @@ void thumbnailDialogInit(GtkWindow *parent){
 
     pLabelStatus=gtk_label_new("...");
     g_object_set(pLabelStatus, "margin-top", 20, NULL);
-    g_object_set(pLabelStatus, "margin-bottom", 20, NULL);
     gtk_box_pack_start(GTK_BOX(pVBox), pLabelStatus, FALSE, FALSE, 0); 
 
-    // pButton
-    pButton = gtk_button_new_with_label("Start/Stop MProgress");
-    resetButtonLabel(NULL);
-    g_object_set(pButton, "margin-left", 80, NULL);
-    g_object_set(pButton, "margin-right", 80, NULL);
-    g_object_set(pButton, "margin-bottom", 20, NULL);                                    
-    gtk_box_pack_start(GTK_BOX(pVBox), pButton, FALSE, FALSE, 0);    
-    g_signal_connect (G_OBJECT (pButton),"button-press-event",G_CALLBACK (buttonPressCB), NULL); //click
     
     // window
     gtk_window_set_skip_taskbar_hint (GTK_WINDOW(pWindow),TRUE);  //to avoid multi windows in the app manager
@@ -99,6 +126,11 @@ void thumbnailDialogInit(GtkWindow *parent){
 	g_signal_connect(G_OBJECT(pWindow), "destroy", G_CALLBACK(windowDestroyCB), NULL); 
 	gtk_widget_show_all(pWindow);
 }
+
+static gboolean  windowMapCB (GtkWidget *widget, GdkEvent *event, gpointer data)  {
+gtk_widget_grab_focus(pButton);
+}
+    
 
 static int resetButtonLabel(gpointer user_data){
     switch (state) { 
@@ -160,6 +192,40 @@ static gboolean  buttonPressCB (GtkWidget *event_box, GdkEventButton *event, gpo
     }
 }
 
+static gboolean  checkOneFolderCB (GtkWidget *event_box, GdkEventButton *event, gpointer data)  {
+    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(checkOneFolder))) { //uncheck
+        gtk_button_set_label(GTK_BUTTON(checkOneFolder),"Limit the processing to one Folder");
+    } else { //check
+        GtkWidget *dialog;
+        GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER;
+        gint res;        
+        dialog = gtk_file_chooser_dialog_new ("Select the folder",
+                                          GTK_WINDOW(pWindow),
+                                          action,
+                                          "Cancel",
+                                          GTK_RESPONSE_CANCEL,
+                                          "Ok",
+                                          GTK_RESPONSE_ACCEPT,
+                                          NULL);
+        gtk_file_chooser_set_current_folder (GTK_FILE_CHOOSER(dialog),photosRootDir);
+        res = gtk_dialog_run (GTK_DIALOG (dialog));
+        if (res == GTK_RESPONSE_ACCEPT){
+            char *folder;
+            GtkFileChooser *chooser = GTK_FILE_CHOOSER (dialog);
+            folder = gtk_file_chooser_get_filename (chooser);
+            g_print("folder selected %s", folder);        
+            gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(checkOneFolder), TRUE);            
+            gtk_button_set_label(GTK_BUTTON(checkOneFolder),folder);
+            g_free (folder);
+          } else { //cancel
+            gtk_button_set_label(GTK_BUTTON(checkOneFolder),"Limit the processing to one Folder");            
+        }
+        gtk_widget_destroy (dialog);
+        
+    }
+    return FALSE; //propagate the event
+}
+
 /*
 launch the thread function
 */
@@ -175,6 +241,7 @@ be carefull with this function, it runs in a seperate thread, all UI calls need 
 static void *heavyWork(void *pointer){
     static int i=0;
     i++;
+    int counter;
     gint64 initTime=g_get_monotonic_time ();        
     state = RUNNING;
     //g_print("just before thumbnails creating");
@@ -183,7 +250,29 @@ static void *heavyWork(void *pointer){
     #else 
     int _size=PHOTO_SIZE*2;
     #endif
-    int counter=createThumbnail4Dir(photosRootDir,thumbnailDir, _size, followupCB);
+    const char *photos2process;
+
+    //if checkForceClean == TRUE remove the content thumbnailDir
+    //it is meaningfull if checkOneFolder is FALSE
+    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(checkForceClean)) && !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(checkOneFolder))) {
+        g_print("\nforce clean\n"); 
+        gchar *cmd = g_strdup_printf("rm -rf %s/%s",thumbnailDir,"*");
+        //launch the cmd
+        GError *err = NULL; gchar *stdOut,*stdErr = NULL;int status;
+        g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
+        g_free(cmd);
+    }
+    //we have selected one folder to process
+    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(checkOneFolder))){
+        photos2process=gtk_button_get_label(GTK_BUTTON(checkOneFolder));
+        //we clean the thumbnails of the selected dir
+        removeThumbnails(photos2process);
+        
+    }else{ //we process all the photos of the root dir
+        photos2process=photosRootDir;
+    }
+    //we generate thumbnails if they don't exist or are fresher    
+    counter=createThumbnail4Dir(photos2process,thumbnailDir, _size, followupCB);
     //finished
     if (state == RUNNING) state=FINISHED; 
     if (state != DESTROYED) {
@@ -194,7 +283,6 @@ static void *heavyWork(void *pointer){
         g_print("%s",status);
         g_usleep(500000);
         gdk_threads_add_idle(resetStatusCB, status);
-        //g_free (status);
         cancelRunning=TRUE; //for the animation of the progressbar to stop at the end
     }
 }
@@ -210,6 +298,7 @@ static int resetStatusCB (gpointer user_data){
     char *s1=user_data;
     //g_print("reset status%s\n",s1);
     gtk_label_set_text(GTK_LABEL(pLabelStatus),s1);
+    g_free(s1); //free the string created in createThumbnail4Dir
     return FALSE;
 }
 
@@ -230,3 +319,26 @@ static int completedThreadLauncherCB (gpointer user_data){
     completedThreadCB();
     return FALSE; //to stop the loop
 }
+
+/*
+we remove the thumbnails of the dirpath
+*/    
+static void removeThumbnails(const gchar *dirPath){
+    int iDir=getFileNode(dirPath);
+    gchar *thumbnailPath =g_strdup_printf ("%s/%i",thumbnailDir,iDir);
+    DIR *directory = opendir(thumbnailPath); //open the current dir
+    struct dirent *pFileEntry;
+    if(directory != NULL) {
+        while((pFileEntry = readdir(directory)) != NULL)   {
+            char *filePath = g_strdup_printf("%s/%s",thumbnailPath, pFileEntry -> d_name); 
+            if (g_strcmp0(pFileEntry -> d_name,"..") == 0 || g_strcmp0(pFileEntry -> d_name,".") == 0) continue; //avoid the . and .. dirs
+            if (pFileEntry->d_type!=DT_DIR) {
+                    remove(filePath);                
+            }
+            g_free (filePath);        
+        }
+        closedir(directory);
+    }
+    g_free(thumbnailPath);
+}
+

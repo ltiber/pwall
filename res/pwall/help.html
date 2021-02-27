@@ -42,27 +42,27 @@
     <h2> What is pwall App?</h2>
     
     
-<p>pwall is modern style photo viewer and organizer.
+<p>pwall is modern style photo/video viewer and organizer.
     It shows the <i>folders</i> of your photos main directory
     in the left pane and a <i>photowall</i> in the right.</p>
     <p> The directories are <i>descending</i> sorted.</p>
     <p>The photowall is a <i>scrolling</i> panel of square thumbnails
-giving a preview of each photo. Loading and unloading of this 
+giving a preview of each photo/video. Loading and unloading of this 
         scrolling panel is made <i>dynamically</i>, viewing page by viewing page
         like <i>smartphones</i> do.
-        To scroll through your photo library, you can select a folder in the left panel or scroll <i>directly</i> in the photowall. Going down and up will lead you to <i>next or previous</i> directory.</p>
+        To scroll through your photo library, you can select a folder in the left panel or scroll <i>directly</i> in the photowall. Going down and up will drive you to <i>next or previous</i> directory.</p>
 <p>
-    pwall also allows you to have basics <i>management</i> of photos (change dates, copy a group of photos to another directory, delete, share, get GPS data...) but doesn't have edit functions.</p>
+    pwall also allows you to have basics <i>management</i> of photos/videos (change dates, copy a group of photos to another directory, delete, share, get GPS data...) but doesn't have edit functions.</p>
     <p>The photowall shows the photos in a descending sorted on the file <i>modification date</i> for each directory. If your modification date doesn't represent the <i>taken date</i>, you can use the change dates facilities to get the correct sorting.</p>
-    <p> Clicking on a photo opens it in <i>fullscreen</i> mode. You can continue your navigation in this mode with <i>left and right keys</i>. </p>
-    <p>pwall supports only jpg and png files. But for my usage, it was enough.</p>
+    <p> Clicking on a photo/video opens it in <i>fullscreen</i> mode. You can continue your navigation in this mode with <i>left and right keys</i>. </p>
+    <p>pwall supports jpg and png files for the photos and mp4, mpg, avi, mov for the videos.</p>
     <p>pwall <i>doesn't import</i> photos in a specific database. It only uses the file system and can handle smoothly 50000 photos with a modern laptop.</p>
     <p>You can use pwall as an <i>alternative</i> to Shotwell to browse your photo gallery.</p>
 
 <h2>Actions</h2>
     <h3>Main menu</h3>
    <ul>
-       <li><i>Refresh Thumbnails</i>: This process will create <span foreground=\"#EC8156\">thumbnails</span> for all <span foreground=\"#EC8156\">your photos</span>. It can be long!!! The app uses thumbnails to display photo walls and it can take time to create one for each photo. On basic laptop, it can take 7mn to generate thumbnails for 10000 photos. Each thumbnail costs about 10ko and is stored in you home dir in the .pwall subdir. The best thing is to run once at first time or when you renew massively your photos. Updates will be done based on file's last modified date. Nevertheless feel free to cancel this operation if it is not the right moment.The app will create thumbnails <span foreground=\"#EC8156\">on the fly.</span> But the UI might <span foreground=\"#EC8156\">freeze</span> some time to time.</li>
+       <li><i>Refresh Thumbnails</i>: This process will create <span foreground=\"#EC8156\">thumbnails</span> for all <span foreground=\"#EC8156\">your photos and videos</span>. It can be long!!! The app uses thumbnails to display photo walls and it can take time to create one for each photo/video. On basic laptop, it can take 7mn to generate thumbnails for 10000 photos. Each thumbnail costs about 10ko and is stored in you home dir in the .pwall subdir. The best thing is to run once at first time or when you renew massively your photos/videos. Updates will be done based on file's last modified date. Nevertheless feel free to cancel this operation if it is not the right moment.The app will create thumbnails <span foreground=\"#EC8156\">on the fly.</span> But the UI might <span foreground=\"#EC8156\">freeze</span> some time to time.</li>
        <li><i>Change photos directory</i> gives you the option to specify again the location of your photos library</li>
        <li>Help gives you access to this current help.</li>
     </ul>      
@@ -93,49 +93,51 @@ giving a preview of each photo. Loading and unloading of this
     <ul>
         <li>Use right, left, top, bottom <i>keys</i> to navigate through the photowall</li>
         <li>ctrl-left to put the focus on the directory tree and go up and down in the tree with keys</li>
-        <li>Use <i>enter</i> or ctrl-O to open the selected photo in full screen</li>
-        <li>Alt-enter to get the <i>properties</i> of the photo</li>
+        <li>Use <i>enter</i> or ctrl-O to open the selected photo/video in full screen</li>
+        <li>Alt-enter to get the <i>properties</i> of the photo/video</li>
         <li>Right click or Context Menu key to open <i>context menu</i></li>
         <ul>
-            <li>"Refresh" There is no automatic refresh if some changes happen in the file system with other tools. Just click this option to update the photowall.
-            <li>"Open with > Terminal" to open the terminal with the directory of the selected photos. You can run any commands over photos. ctrl-shift-V drops the file names in your terminal from the clipboard</li>
+            <li>"Refresh" I keep this function but it might be useless now. Because since the version 2.0, there is an automatic refresh if some changes happen in the file system with other tools. It updates all the caching data of the photowall.
+            <li>"Open with > Terminal" to open the terminal with the directory of the selected photos/videos. You can run any commands over photos/videos. ctrl-shift-V drops the file names in your terminal from the clipboard</li>
             <li>"Open with > Google Maps" to get the location of the focused photo if GPS data exists.</li>
-            <li>"Open with > ..." the other actions are the photo viewers or editors found in your machine</li>
+            <li>"Open with > ..." the other actions are the photo/video viewers or editors found in your machine</li>
             <li>"Share > Mail" to send the selected photos with your default mail application (Geary, Thunderbird, xdg-email compliant app)</li>
             <li>"Share > Web Whatsapp" to send the focused photo via whatsapp (when you attach the photo use ctrl-V to get the current photo)</li>
             <li>"Share > Facebook" to post the focused photo to Facebook (when you attach the photo use ctrl-V to get the current photo)</li>
-            <li>"Properties" show the exif data of the photo. You can copy all the data of this box for further usage.</li>
+            <li>"Properties" show the exif data of the photos and basic data of videos. You can copy all the data of this box for further usage.</li>
             <li>"Copy To" copies the current selection to a chosen directory via a dialog box (Ctrl-C key shortcut)</li>
-            <li>"Move To" moves the current selection to a chosen directory via a dialog box</li>
-            <li>"Delete" removes the selected photos (Suppr key shortcut)</li>
-            <li>"Date Operations > Change file's date with Exif's date" updates the file's modification date with the date taken exif data</li>
-            <li>"Date Operations > Entry a new file's date" updates the file's modification date and the date taken exif data with a new date/time</li>
+            <li>"Move To" moves the current selection to a chosen directory via a dialog box (Ctrl-X key shortcut)</li>
+            <li>"Delete" removes the selected photos/videos (Suppr key shortcut)</li>
+            <li>"Date Operations > Change file's date with Exif's date" updates the file's modification date with the date taken exif data (doesn't work on videos)</li>
+            <li>"Date Operations > Entry a new file's date" updates the file's modification date and the date taken exif data with a new date/time (change only mod date for videos) </li>
         </ul>
 
     </ul>
 
     <h3>Action in fullscreen mode</h3>
     <ul>
-        <li>Right, left keys to see the <i>next or previous</i> photo of your library</li>
-        <li>Ctrl + or - to <i>zoom</i> in or out</li>
+        <li>Right, left keys to see the <i>next or previous</i> photo/video of your library</li>
+        <li>Ctrl + or - to <i>zoom</i> in or out (only for photos)</li>
+		<li>Space bar to <i>pause/replay</i> the video</li>
+		<li>Mouse move or stay on the video slider panel shows the video slider, you can move it to change the reading position of the video</li>
         <li>Escape key to quit fullscreen mode and return to the photowall</li>
-        <li>Alt-enter to get the <i>properties</i> of the photo</li>
+        <li>Alt-enter to get the <i>properties</i> of the photo/video</li>
         <li>Ctrl-C to open the copy dialog</li>
-        <li>Delete to remove the current photo from its directory</li>
+        <li>Delete to remove the current photo/video from its directory</li>
         <li>Right click or Context Menu key or Ctrl-O to open the <i>context menu</i></li>
         <ul>
             <li>"Open with > Terminal" to open the terminal with the directory of the photo and run commands over photo (ctrl-shift-V drops the file name in your terminal)</li>
             <li>"Open with > Google Maps" to get the location of the current photo if GPS data exists.</li>
-            <li>"Open with > ..." the other actions are the photo viewers or editors found in your machine</li>
+            <li>"Open with > ..." the other actions are the photo/video viewers or editors found in your machine</li>
             <li>"Share > Mail" to send the current photo with your default mail application (Geary, Thunderbird, xdg-email compliant app)</li>
             <li>"Share > Web Whatsapp" to send the current photo via whatsapp (when you attach the photo use ctrl-V to get the current photo)</li>
-            <li>"Share > Facebook" to post the current photo to Facebook (when you attach the photo use ctrl-V to get the current photo)</li>
-            <li>"Properties" show the exif data of the photo. You can copy all the data of this box for further usage.</li>
-            <li>"Copy To" copies the current photo to a chosen directory via a dialog box (Ctrl-C shortcut)</li>
-            <li>"Move To" moves the current photo to a chosen directory via a dialog box</li>
-            <li>"delete" removes the current photo (Suppr key shortcut) </li>
-            <li>"Date Operations > Change file's date with Exif's date" updates the file's modification date with the date taken exif data</li>
-            <li>"Date Operations > Entry a new file's date" updates the file's modification date and the date taken exif data with a new date/time</li>
+            <li>"Share > Facebook" to post the current photo/video to Facebook (when you attach the photo use ctrl-V to get the current photo)</li>
+            <li>"Properties" show the exif data of photos and basic data of videos. You can copy all the data of this box for further usage.</li>
+            <li>"Copy To" copies the current photo/video to a chosen directory via a dialog box (Ctrl-C shortcut)</li>
+            <li>"Move To" moves the current photo/video to a chosen directory via a dialog box (Ctrl-X key shortcut)</li>
+            <li>"delete" removes the current photo/video (Suppr key shortcut) </li>
+            <li>"Date Operations > Change file's date with Exif's date" updates the file's modification date with the date taken exif data (doesn't work on videos)</li>
+            <li>"Date Operations > Entry a new file's date" updates the file's modification date and the date taken exif data with a new date/time (change only mod date for videos)</li>
         </ul>
     </ul>
 <h2>Installation comments</h2>

@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <dirent.h>
 #include <time.h>
+#include <utime.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <string.h>
@@ -30,6 +31,12 @@ static int read_1_byte (FILE * myfile) ;
 static void removeAllWidgetsCallback(GtkWidget *pWidget, gpointer data);
 static gint compareTimeItems(gconstpointer a,  gconstpointer b);
 static int createThumbnail4DirInternal(const gchar *dirPath,const gchar *targetDir, int size, int (*followupCB)(char *), int reset);
+static int createThumbnail4Photo(const gchar *filePath,const int iDir, const gchar *targetDir, const int size , const long int time, const gboolean removeExt);
+static int createThumbnail4Video(const gchar *filePath,const int iDir, const gchar *targetDir, const int size , const long int time);
+static int thumbnailNeedsRefresh(const gchar *filePath,const int iDir, const gchar *targetDir);
+static int _countFilesInDir(const gchar *dirPath, const gboolean extSupportedOnly, const gboolean recursive, const gboolean reset);
+
+
 
 int  getPhotoSize(const char *filePath, unsigned int *width, unsigned int *height) {
     int ret=getPhotoSizeJPG(filePath, width, height);
@@ -95,8 +102,11 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
             second=fgetc(infile); 
             j++;
         }
-    } else
+    } else{
         fseek(infile, 4, SEEK_SET); //s'il n'y a pas d'exif section on retourne en haut du fichier
+        first = fgetc(infile); 
+        second=fgetc(infile); 
+    }
     found=FALSE; //reinit
     //workaround for s7 photos
     //read first and second (attention pas sur que le fseek du dessus soit correct - j'enleverai 2 bytes)
@@ -104,9 +114,7 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
     
     //look for the width and height section 
     i=0;
-    first = fgetc(infile);
-    while(i<LIMIT){
-        second=fgetc(infile);
+    while(i<LIMIT){        
         //SOF0 SOF2   http://dev.exiv2.org/projects/exiv2/wiki/The_Metadata_in_JPEG_files     
         if ((first == 0xff && second == 0xc0)||(first == 0xff && second == 0xc2)){
             //la hauteur est au byte 4 et 5, la largeur au byte 6 et 7
@@ -124,10 +132,11 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
             break;
         }
         first=second; //prepare next loop
+        second=fgetc(infile); //fix for instagram photos
         if (first==EOF) break;
         i++;
     }
-    
+
     fclose(infile);
 
     if (verbose) {
@@ -349,22 +358,20 @@ int createThumbnail4Dir(const gchar *dirPath,const gchar *targetDir, int size, i
 static int createThumbnail4DirInternal(const gchar *dirPath,const gchar *targetDir, int size, int (*followupCB)(char *), int reset){
     static int counter=0;
     static int cancel=FALSE;
-    static int counterDir=0;
     if (reset){
         counter=0;
         cancel=FALSE;
     }
     DIR *directory = opendir(dirPath); //open the current dir
-    struct dirent *pFileEntry;
+    struct dirent *pFileEntry;    
     if(directory != NULL) {
+      int iDir = getFileNode(dirPath); // get the inode of the folder
       while((pFileEntry = readdir(directory)) != NULL)   {
         if (cancel) {
             g_print("cancel caught at %s", pFileEntry -> d_name);
             break; //interrupt the process
         }
         char *fileName = pFileEntry -> d_name; // Get filename
-        int idNode=pFileEntry->d_ino;
-        //g_print("%s/%s-%i",dirPath,fileName,idNode);
         if (g_strcmp0(fileName,"..") == 0 || g_strcmp0(fileName,".") == 0) continue; //avoid the . and .. dirs
         if (pFileEntry->d_type==DT_DIR) {
             //recursivité
@@ -375,23 +382,18 @@ static int createThumbnail4DirInternal(const gchar *dirPath,const gchar *targetD
         } else { //if not needed if (pFileEntry->d_type==DT_REG || pFileEntry->d_type==DT_LNK)
             //g_print("isFile\n");
             
-            //hidden files
-            if (g_str_has_prefix(fileName, ".")) {
-                continue;
-            } 
-            
-            //jpeg files
-            if (g_str_has_suffix(fileName, ".jpg") || g_str_has_suffix(fileName, ".JPG") || g_str_has_suffix(fileName, ".jpeg") || g_str_has_suffix(fileName, ".JPEG") || g_str_has_suffix(fileName, ".png") || g_str_has_suffix(fileName, ".PNG")) {
+            if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name) || hasVideoExt(pFileEntry -> d_name)) ) {
                 //g_print("isJPEG\n");
                 counter++;
                 gchar *filePath =g_strdup_printf ("%s/%s",dirPath,fileName);
                 gchar *msg=g_strdup_printf ("%s - %i completed" ,filePath,counter);
                 if (followupCB!=NULL && counter%5==0) {
                     cancel=followupCB(msg);
+                    // free(msg) must be done in followupCB later in the gtk thread
                 } 
-                int retCreate = createThumbnail(filePath,idNode,targetDir, size);
+                long int time = getFileTime(filePath);
+                int retCreate = createThumbnail(filePath,iDir,targetDir, size, time);
                 //if (retCreate == ERR_FILE_NOT_VALID) cancel = TRUE; //we interrupt all the process for debugging
-                g_free (msg); //IMHO, we should have done a free(msg) in followupCB but not working
                 g_free (filePath); 
             }
         }
@@ -402,26 +404,66 @@ static int createThumbnail4DirInternal(const gchar *dirPath,const gchar *targetD
 }
 
 /*
-has the image file extension jpg jpeg png
+hidden file start with .
 */
-static int hasImageExt(const gchar *name){
+int isHiddenFile(const gchar *name){
+    return g_str_has_prefix(name,".");
+}
+
+/*
+has file extension jpg jpeg png
+*/
+int hasPhotoExt(const gchar *name){
     if (g_str_has_suffix(name, ".jpg") || g_str_has_suffix(name, ".JPG") || g_str_has_suffix(name, ".jpeg") || g_str_has_suffix(name, ".JPEG") || g_str_has_suffix(name, ".png") || g_str_has_suffix(name, ".PNG"))
         return TRUE; else return FALSE;
 }
+
 /*
-Count the number of files in a directory (don't count in sub-directory).
-isImage count only image type files ext jpg or png
+has EXIF extension only jpeg files
 */
-int countFilesInDir(const gchar *dirPath, const int isImage){
-    int counter=0;
+int hasExifExt(const gchar *name){
+    if (g_str_has_suffix(name, ".jpg") || g_str_has_suffix(name, ".JPG") || g_str_has_suffix(name, ".jpeg") || g_str_has_suffix(name, ".JPEG") )
+        return TRUE; else return FALSE;
+}
+
+
+/*
+has file extension jpg jpeg png
+*/
+int hasVideoExt(const gchar *name){
+    if (g_str_has_suffix(name, ".mp4") || g_str_has_suffix(name, ".MP4") ||
+        g_str_has_suffix(name, ".mpg") || g_str_has_suffix(name, ".MPG") || g_str_has_suffix(name, ".mpeg") || g_str_has_suffix(name, ".MPEG") || 
+        g_str_has_suffix(name, ".avi") || g_str_has_suffix(name, ".AVI") ||
+        g_str_has_suffix(name, ".mov") || g_str_has_suffix(name, ".MOV"))
+        return TRUE; else return FALSE;
+}
+
+
+int countFilesInDir(const gchar *dirPath, const gboolean extSupportedOnly, const gboolean recursive){
+    return _countFilesInDir(dirPath,extSupportedOnly,recursive,TRUE);
+}
+/*
+Count the number of files in a directory (count in sub-directory in recursive is TRUE).
+extSupportedOnly means that we count only file that have photo or video extension: jpg, png, mp4...
+We don't count hidden files
+*/
+static int _countFilesInDir(const gchar *dirPath, const gboolean extSupportedOnly, const gboolean recursive, const gboolean reset){
+    static int counter=0;
+    if (reset) counter=0;
     DIR *directory = opendir(dirPath); //open the current dir
     struct dirent *pFileEntry;
     if(directory != NULL) {
       while((pFileEntry = readdir(directory)) != NULL)   {
         if (g_strcmp0(pFileEntry -> d_name,"..") == 0 || g_strcmp0(pFileEntry -> d_name,".") == 0) continue;
-        if (isImage && !hasImageExt(pFileEntry -> d_name)) continue;
+        if (extSupportedOnly && !hasPhotoExt(pFileEntry -> d_name) && !hasVideoExt(pFileEntry -> d_name)) continue;
         if (pFileEntry->d_type==DT_DIR) { 
-            continue;
+            if (recursive){
+                char *_dirPath=g_strdup_printf ("%s/%s",dirPath, pFileEntry->d_name);
+                _countFilesInDir(_dirPath, extSupportedOnly, recursive,FALSE);
+                g_free (_dirPath);
+            } else {
+                continue;
+            }
         }  else {
             counter++;
         }
@@ -431,25 +473,56 @@ int countFilesInDir(const gchar *dirPath, const int isImage){
     return counter;
 }
 
-//size ex:92
-//the name of the thumbnail will be the name of the inode (kind of index for the file)
-int createThumbnail(const gchar *filePath,const int idNode, const gchar *targetDir, const int size){
+/*
+size ex:92
+iDir is the inode of the dir part of the file
+Thumbnails will be stored in ~/.pwall/mini/%iDir%/%fileName%
+*/
+int createThumbnail(const gchar *filePath, const int iDir, const gchar *targetDir, const int size, const long int time){
+    gchar *fileName = g_path_get_basename (filePath);
+    if (!thumbnailNeedsRefresh(filePath,iDir,targetDir))  return ERR_THUMBNAIL_ALREADY_EXIST; 
+    if (hasPhotoExt(fileName)) return createThumbnail4Photo(filePath,iDir, targetDir, size, time, FALSE);
+    if (hasVideoExt(fileName)) return createThumbnail4Video(filePath,iDir, targetDir, size, time);
+    return ERR_FILE_NOT_VALID;
+}
+
+/*
+if photoLastModified<=thumbnailLastModified we don't need to create new thumbnail
+*/
+static int thumbnailNeedsRefresh(const gchar *filePath, const int iDir, const gchar *targetDir){
     //check if thumbnail already exists
-    gchar *targetFilePath =g_strdup_printf ("%s/%i",targetDir,idNode);
+    gchar *targetFilePath =getThumbnailPath(targetDir,iDir,filePath);
     GdkPixbufLoader *loader=NULL;
     long int thumbnailLastModified=getFileTime(targetFilePath);
     if (thumbnailLastModified!=-1){ //thumbnail exists
         long int photoLastModified=getFileTime(filePath);
-        if (photoLastModified<=thumbnailLastModified) {
+        if (photoLastModified!=thumbnailLastModified) {
             //g_print("thumbnail already exist for %s\n",filePath);
             g_free(targetFilePath);       
-            return ERR_THUMBNAIL_ALREADY_EXIST; //if photoLastModified<=thumbnailLastModified we don't create new thumbnail
+            return FALSE;//if photoLastModified<=thumbnailLastModified we don't create new thumbnail
         }
     }
+    g_free(targetFilePath);        
+    return TRUE;
+}
     
+
+static int createThumbnail4Photo(const gchar *filePath, const int iDir, const gchar *targetDir, const int size, const long int time, const gboolean removeExt){
+    g_print("\ncreateThumbnail4Photo started\n");
+    gchar *fileName = g_path_get_basename (filePath);
+    gchar *targetSubDir=g_strdup_printf ("%s/%i",targetDir,iDir);
+    if (getFileNode(targetSubDir)==-1) mkdir(targetSubDir, 0775); // read, no write for others
+    gchar *_fileName;//with no extension
+    gchar *targetFilePath;
+    if (removeExt) {
+        _fileName=g_strndup(fileName,strlen(fileName)-4);
+        targetFilePath =g_strdup_printf ("%s/%s",targetSubDir,_fileName);
+    } else {
+        targetFilePath =g_strdup_printf ("%s/%s",targetSubDir,fileName);
+    }
+    GdkPixbufLoader *loader=NULL;
     int compX=-1,compY=-1,cropX=0,cropY=0;
     float ratio=1.0;
-    gchar *fileName = g_path_get_basename (filePath);
     //calculate width and height compression values
     int x=0,y=0;
     int isPhoto=getPhotoSize(filePath,&x,&y);
@@ -508,6 +581,8 @@ int createThumbnail(const gchar *filePath,const int idNode, const gchar *targetD
             g_print ("-error: %s\n", error->message);
             g_clear_error(&error);
             g_free(fileName);
+            if (removeExt) g_free(_fileName);
+            g_free(targetSubDir);
             g_free(targetFilePath);
             gdk_pixbuf_loader_close (loader, &error);
             g_object_unref(loader);
@@ -546,8 +621,13 @@ int createThumbnail(const gchar *filePath,const int idNode, const gchar *targetD
         gdk_pixbuf_save (dst, targetFilePath, "jpeg", &error, "quality", "100", NULL);
     if (verbose) timeOut(fileName,"saveToDisk");
 
+    //change modification time
+    setFileTime(targetFilePath,time);
+
     //release pointers
     g_free(fileName);
+    if (removeExt) g_free(_fileName);
+    g_free(targetSubDir);
     g_free(targetFilePath);  
     g_object_unref(src); 
     g_object_unref(dst);
@@ -565,30 +645,94 @@ int createThumbnail(const gchar *filePath,const int idNode, const gchar *targetD
     return PASSED_CREATED;
 }
 
+static int createThumbnail4Video(const gchar *filePath,const int iDir, const gchar *targetDir, const int size, const long int time){
+    //we first extract an image from the video we put in a tmp dir
+    gchar *fileName = g_path_get_basename (filePath);
+    gchar *targetSubDir=g_strdup_printf ("%s/tmp",targetDir);
+    if (getFileNode(targetSubDir)==-1) mkdir(targetSubDir, 0775); // read, no write for others
+
+    gchar *targetFilePathTmp =g_strdup_printf ("%s/%s.jpg",targetSubDir,fileName); //we add a.jpg extension
+
+ //   gchar *targetFilePathTmp =g_strdup_printf ("%s/%i.jpg",targetDir,idNode);
+    //at first we used ffmpegthumbnailer to create a new thumbnail but we ran into errors for compressed video
+    //char *cmd=g_strdup_printf("ffmpegthumbnailer -i \"%s\" -o \"%s\" -s %i",filePath,targetFilePathTmp,size*2); //Error: decodeVideoFrame() failed: frame not finished
+    
+    //use better ffmpeg
+    //ffmpeg -loglevel panic -y -ss 00:00:01 -i test_960.mp4 -vframes 1 -vf scale=w=184:h=184:force_original_aspect_ratio=decrease GOPR0663_small_mini.jpg
+    char *cmd=g_strdup_printf("ffmpeg -loglevel panic -y -ss 00:00:01 -i \"%s\" -vframes 1 -vf scale=w=%i:h=%i:force_original_aspect_ratio=decrease \"%s\"",filePath,size*2,size*2,targetFilePathTmp);
+    
+    g_print("\nvideo %s\n",cmd);
+    GError *err = NULL;    gchar *stdOut = NULL;    gchar *stdErr = NULL;    int status;
+    g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
+    if (err){
+        g_print ("-error message: %s\n", err->message);
+        g_clear_error(&err);
+        return ERR_FFMPEGTHUMBNAILER_DOESNT_EXIST;       
+    } else if (stdErr[0]!='\0' && !strstr(stdErr,"deprecated")){ //deprecated is accepted         
+        g_print("-error stderr: %s\n",stdErr); 
+        //check if the tmp file has been created anyway
+        struct stat attr;
+        if (stat(targetFilePathTmp, &attr)>=0)
+            g_print("%s created",targetFilePathTmp);        
+        else 
+            return ERR_FILE_NOT_VALID;
+    } else {//done
+        g_print("%s created",targetFilePathTmp);    
+    }
+    g_free(cmd);
+    //we use createThumbnail4Photo to crop and resize the targetFilePathTmp //
+    int ret= createThumbnail4Photo(targetFilePathTmp, iDir, targetDir,size, time, TRUE);
+    remove (targetFilePathTmp); //we remove the temp file
+    return ret;
+}
 /*
 Last mod date of a file : number from 1970/01/01
 */
 long int getFileTime(const char *path) {
     struct stat attr;
     if (stat(path, &attr)>=0) { //check no errors with stat function
-        long int x = mktime(localtime(&attr.st_mtime)); //mktime convert a time to a number from 1970/01/01 (time_t)
+        //long int x = mktime(localtime(&attr.st_mtime)); //mktime convert a time to a number from 1970/01/01 (time_t)
         //check conversion is correct
         //char _date[20];
         //strftime(_date, 20, "%Y-%m-%d %H:%M:%S", localtime(&x)); //localtime create a new tm struc which represent a time 
         //g_print("%s",_date);
-        return x;
+        return attr.st_mtime;
         //strftime(date, 20, "%d-%m-%y", localtime(&(attrib.st_ctime)));
         //printf("Last modified time: %s", ctime(&attr.st_mtime));
     } else return -1;
 }
 
-long int getFileNode(const char *path) {
+/*
+change modification time to the transmitted time
+change the accesstime to NOW
+*/
+void setFileTime(const char *path, long int _time){
+    struct utimbuf new_times;
+    new_times.actime = time(NULL); // access time changed to now //
+    new_times.modtime = _time;    // modification time is changed //
+    utime(path, &new_times);   
+}
+
+int getFileNode(const char *path) {
     struct stat attr;
     if (stat(path, &attr)>=0) { //check no errors with stat function
-        long int x = attr.st_ino; 
+        int x = attr.st_ino; 
         return x;
     } else return -1;
 }
+
+/*
+size in MB
+*/
+float getFileSize(const char *path) {
+    struct stat attr;
+    if (stat(path, &attr)>=0) { //check no errors with stat function
+        long int x = attr.st_size; 
+        return (float)x/1000000;
+    } else return -1;
+}
+
+
 
 //Not recursive
 GPtrArray *getDirSortedByDate(const gchar *dirPath){
@@ -603,9 +747,7 @@ GPtrArray *getDirSortedByDate(const gchar *dirPath){
         if (g_strcmp0(fileName,"..") == 0 || g_strcmp0(fileName,".") == 0) continue;
         if (pFileEntry->d_type==DT_REG || pFileEntry->d_type==DT_LNK){
             
-            if ( !g_str_has_prefix(fileName,".") && (g_str_has_suffix(fileName, ".jpg") || g_str_has_suffix(fileName, ".JPG") || g_str_has_suffix(fileName, ".jpeg") || g_str_has_suffix(fileName, ".JPEG") || g_str_has_suffix(fileName, ".png") || g_str_has_suffix(fileName, ".PNG") )) {
-                //g_print("isJPEG\n");
-                
+            if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name) || hasVideoExt(pFileEntry -> d_name))) {   
                 FileObj *pFileObj=malloc(sizeof(FileObj));
                 pFileObj->name=g_strdup_printf("%s",fileName);
                 pFileObj->idNode=idNode;
@@ -754,11 +896,23 @@ char *replaceString(char *orig, char *rep, char *with) {
     strcpy(tmp, orig);
     return result;
 }
+
+/*
+Get the fullpath to access to the thumbnail
+It has the following schema : ~/.pwall/mini/%iDir%/%basename%
+*/
+gchar *getThumbnailPath(const gchar *_thumbnailDir, const int iDir, const gchar *fullPathFile){
+    gchar *basename=g_path_get_basename(fullPathFile);
+    gchar *ret=g_strdup_printf("%s/%i/%s",_thumbnailDir,iDir,basename);
+    g_free(basename);
+    return ret;
+}
 /*
 extract key value from a list of key value in string
 example of string key1=value1\nkey2=value2
 */
 char *extractKey(char *text, char *key){
+    if (!text || !key) return NULL;
 	char *ptr = strstr(text, key);
     if (!ptr) return NULL;
 	char *res, *tmp ;

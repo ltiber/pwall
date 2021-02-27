@@ -4,7 +4,7 @@
 //photoOrganizer public Structure/Object/enum
 
 typedef struct PhotoObj {
-	int idNode; //disk system file idNode
+	int iDir; //inode of the dir which contains the file used for thumbnails
     int col; //col in the photowall
     int row; //row in the photowall
 	int hasFocus; //boolean
@@ -20,7 +20,7 @@ typedef struct PhotoObj {
 
 //used to load the sequentialy the photos in the photowall
 typedef struct RowObj {
-	int idNode; //disk system directory idNode
+	int idNode; //disk system directory inode
     int index; //index in the directory of the first photo in the row (if index ==-1 it means that the row displays the directory name)
     int indexInPhotoArray; //location of the first photo of the row in the photoArray. It doesn't mean that photoObj has been already loaded at this place
     int len; //number of photos in the row
@@ -67,6 +67,9 @@ int getNextDir(int *row);
 int getPreviousDir(int *row);
 void addCounters2Tree(GtkTreeIter *parent);
 int getPhotoIndex(int col, int row);
+int getPhotoCol(int index);
+int getPhotoRow(int index); 
+
 
 
 
