@@ -108,10 +108,11 @@ int main(int argc, char *argv[]){
     const char *APP_RES = g_getenv ("PWALL_RES");  //for OSX support
 	if (APP_RES == NULL) APP_RES="/usr/share"; //example /usr/share/pwall	
 	resDir = g_strdup_printf("%s/%s",APP_RES,"pwall"); 
-    g_print("new application - resources in %s\n",resDir);
     #ifdef FLATPAK
-    resDir="/app/extra/export/share";
+    //resDir="/app/extra/export/share";
+    resDir="/app/share";
     #endif 	
+    g_print("new application - resources in %s\n",resDir);
     int status;
     //char *locale = setlocale (LC_ALL, ""); //check locale for glib sorting : issue in flatpak runtime Gtk-WARNING **: Locale not supported by C library
     //g_print("local%s",locale);
@@ -148,45 +149,18 @@ static void chgPhotoDirCB (GSimpleAction *action, GVariant *parameter, gpointer 
 }
 
 void helpCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){    
-    /*
-    const char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "help.html");
-    g_print("flatpak dbg %s\n",helpFilePath);
-    GError *err = NULL;*/
-    /* option 1 but ERROR GLib-GIO-CRITICAL **: g_dbus_connection_signal_subscribe: assertion 'G_IS_DBUS_CONNECTION (connection)' failed
-    gtk_show_uri_on_window (GTK_WINDOW(pWindow), helpFilePath, GDK_CURRENT_TIME, &err);    */
-    /* option 2 but appinfo is null
-    GAppInfo *appInfo=g_app_info_get_default_for_uri_scheme ("http");
-    if (appInfo!=NULL){
-        GFile *pFile=g_file_new_for_path (helpFilePath);
-        GList *l=g_list_append(NULL,pFile); 
-        g_print("\nflatpak before launch");
-        g_app_info_launch (appInfo,l, NULL, NULL);
-    }*/
-    /*
-    g_app_info_launch_default_for_uri(helpFilePath,NULL,&err);
-    if (err){ 
-        g_print ("-error: %s\n", err->message);
-    }*/
-    GError *err = NULL;
-    gchar *stdOut = NULL;
-    gchar *stdErr = NULL;
-    int status=0;
-    #ifdef FLATPAK
-    char *helpFilePath="https://htmlpreview.github.io/?https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/help.html";
-    char *cmd = g_strdup_printf("xdg-open %s",helpFilePath); //run the browser
-    #elif LINUX
-    char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "help.html");
-    char *cmd = g_strdup_printf("xdg-open %s",helpFilePath); //run the browser
-    #elif OSX
-    char *helpFilePath =g_strdup_printf ("%s/%s", resDir, "helposx.html");
-    char *cmd = g_strdup_printf("open %s",helpFilePath); //run the browser
-    //TODO WIN
+    #ifdef OSX
+        char *helpFile="helposx.html";
+    #else
+        char *helpFile="help.html";
     #endif
-    g_spawn_command_line_sync (cmd, &stdOut, &stdErr, &status, &err);
+
+    const char *helpFilePath =g_strdup_printf ("file://%s/%s", resDir, helpFile);
+    GError *err = NULL;
+    gtk_show_uri_on_window (GTK_WINDOW(pWindow), helpFilePath, GDK_CURRENT_TIME, &err); //compliant with flatpak
     if (err){ 
         g_print ("-error: %s\n", err->message);
-    }
-
+    }    
 }
 
 const GActionEntry app_actions[] = {

@@ -72,14 +72,15 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
             //longueur du segment est dans les 2 prochains bytes
             first=fgetc(infile);
             second=fgetc(infile);
-            //g_print("%02X %02X",first,second); //debug
+            //g_print("\nfirst %02X second %02X\n",first,second); //debug
             //concat des 2 bytes exemple 0X69(first) 0X30(second) => 0X6930 
             sectionLength=second + (first << 8);
             //sauter
-            //g_print("%ld",sectionLength); //debug
+            //g_print("\ndeplacement dans le segment de %ld -2\n",sectionLength); //debug
             fseek(infile, sectionLength-2, SEEK_CUR);
             found=TRUE;
             //g_print("meta2 length%ld\n", sectionLength );
+            //g_print("\nfound at cursor %i\n",i);
             break;
         }
         first=second; //prepare next loop
@@ -90,7 +91,7 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
         //get the length of the section and jump it while we have 0xffeN which means a section
         first=fgetc(infile);
         second=fgetc(infile);
-        //g_print("afterexifsection :%02X %02X",first,second);
+        //g_print("\nafterexifsection :%02X %02X\n",first,second);
         int j=1;
         while (first == 0xff && second >= 0xe1 && second <=0xe9){
             //g_print("%isection\n",j);
@@ -107,6 +108,7 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
         first = fgetc(infile); 
         second=fgetc(infile); 
     }
+    //g_print("\nfirst et second avant le dernier loop :%02X %02X\n",first,second);
     found=FALSE; //reinit
     //workaround for s7 photos
     //read first and second (attention pas sur que le fseek du dessus soit correct - j'enleverai 2 bytes)
@@ -137,6 +139,7 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
         i++;
     }
 
+    //g_print("deplacement de i=%i dans le dernier loop",i);
     fclose(infile);
 
     if (verbose) {
@@ -222,10 +225,40 @@ int getPhotoOrientation(const char *fileName){
       return -1;
     }
     
+    /* old code doesnt work if exif is not at the start of the file which can be the case */
     /* Read File head, check for JPEG SOI + Exif APP1 */
-    for (i = 0; i < 4; i++)    exif_data[i] = (unsigned char) read_1_byte(myfile);
+    /*for (i = 0; i < 4; i++)    exif_data[i] = (unsigned char) read_1_byte(myfile);
     if (exif_data[0] != 0xFF ||    exif_data[1] != 0xD8 ||    exif_data[2] != 0xFF ||    exif_data[3] != 0xE1)
-    {fclose(myfile); return -1;}
+    {fclose(myfile); return -1;}*/
+
+    /*fix 20/10/22 to support exif not to be at the start of the file*/
+    int first = fgetc(myfile);
+    int second = fgetc(myfile);
+    //look for starting jpeg section
+    if (first != 0xff || second != 0xd8){
+        fclose(myfile);
+        return FALSE;
+    }
+    int exif_found=FALSE;
+    //look for exif segment FFE1 (test 2 bytes consécutifs)
+    first = fgetc(myfile); 
+    int j=0;
+    int LIMIT=100000; //test au max des 50000 1er char avant d'abandonner
+    while(j<LIMIT){
+        second=fgetc(myfile);        
+        if (first == 0xff && second == 0xe1){
+            exif_found=TRUE;
+            break;
+        }
+        first=second; //prepare next loop
+        if (first==EOF) break;
+        j++;
+    }
+    if (!exif_found){
+        fclose(myfile);
+        return FALSE;
+    } 
+
 
     /* Get the marker parameter length count */
     length = read_2_bytes(myfile);
@@ -652,6 +685,7 @@ static int createThumbnail4Video(const gchar *filePath,const int iDir, const gch
     if (getFileNode(targetSubDir)==-1) mkdir(targetSubDir, 0775); // read, no write for others
 
     gchar *targetFilePathTmp =g_strdup_printf ("%s/%s.jpg",targetSubDir,fileName); //we add a.jpg extension
+    //gchar *targetFilePathTmp =g_strdup_printf ("%s/tototo.jpg",targetSubDir); //we add a.jpg extension
 
  //   gchar *targetFilePathTmp =g_strdup_printf ("%s/%i.jpg",targetDir,idNode);
     //at first we used ffmpegthumbnailer to create a new thumbnail but we ran into errors for compressed video
@@ -659,6 +693,7 @@ static int createThumbnail4Video(const gchar *filePath,const int iDir, const gch
     
     //use better ffmpeg
     //ffmpeg -loglevel panic -y -ss 00:00:01 -i test_960.mp4 -vframes 1 -vf scale=w=184:h=184:force_original_aspect_ratio=decrease GOPR0663_small_mini.jpg
+    //char *cmd=g_strdup_printf("ffmpeg -loglevel panic -y -ss 00:00:01 -i \"%s\" -vframes 1 -vf scale=w=%i:h=%i:force_original_aspect_ratio=decrease \"%s\"",filePath,size*2,size*2,targetFilePathTmp);
     char *cmd=g_strdup_printf("ffmpeg -loglevel panic -y -ss 00:00:01 -i \"%s\" -vframes 1 -vf scale=w=%i:h=%i:force_original_aspect_ratio=decrease \"%s\"",filePath,size*2,size*2,targetFilePathTmp);
     
     g_print("\nvideo %s\n",cmd);

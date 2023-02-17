@@ -138,7 +138,8 @@ int photoWidgetLoad(int index){
 	if (!ret) return FALSE;
 	
 	//get orientation
-    int j=getPhotoOrientation(viewedFullPath);   
+    int j=getPhotoOrientation(viewedFullPath); 
+    g_print("\ngetPhotoOrientation for %s = %i \n",viewedFullPath,j);  
     int rotate90Needed=FALSE;
     if (j==6 || j==8) rotate90Needed=TRUE;
     if (rotate90Needed) {int _imgWidth=imgWidth;imgWidth=imgHeight;imgHeight=_imgWidth;} //on inverse width et height
