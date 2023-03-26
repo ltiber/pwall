@@ -3,6 +3,8 @@
 //basic toolkit
 #include <stdlib.h>
 #include <gtk/gtk.h>
+#include <gst/gst.h>
+#include <gst/pbutils/pbutils.h> // to get metadata from video files
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -678,7 +680,10 @@ static int createThumbnail4Photo(const gchar *filePath, const int iDir, const gc
     return PASSED_CREATED;
 }
 
-static int createThumbnail4Video(const gchar *filePath,const int iDir, const gchar *targetDir, const int size, const long int time){
+/*
+version with ffmpeg
+*/
+static int createThumbnail4Videoffmpeg(const gchar *filePath,const int iDir, const gchar *targetDir, const int size, const long int time){
     //we first extract an image from the video we put in a tmp dir
     gchar *fileName = g_path_get_basename (filePath);
     gchar *targetSubDir=g_strdup_printf ("%s/tmp",targetDir);
@@ -720,6 +725,149 @@ static int createThumbnail4Video(const gchar *filePath,const int iDir, const gch
     remove (targetFilePathTmp); //we remove the temp file
     return ret;
 }
+
+static gboolean needVideoFlip(const gchar *filePath){
+    int ret =FALSE;
+    const GstTagList *tags;
+    GError *err = NULL;
+    gchar *uri= gst_filename_to_uri(filePath, NULL);    
+  
+    if (!gst_is_initialized())  gst_init (NULL, NULL);
+
+    GstDiscoverer *discoverer=gst_discoverer_new (GST_SECOND, &err);
+    if (err) {  
+        g_print ("Error creating discoverer instance: %s\n", err->message);
+        g_clear_error (&err);
+        return FALSE;
+    }
+    GstDiscovererInfo *info=gst_discoverer_discover_uri (discoverer,uri,&err);
+    if (err) {  
+        g_print ("Error getting meta data for the uri: %s\n", err->message);
+        g_clear_error (&err);
+        return FALSE;
+    }    
+
+    tags = gst_discoverer_info_get_tags (info);
+    gchar *imageOrientation;
+    if (gst_tag_list_get_string(tags, "image-orientation", &imageOrientation)){
+        if (g_strcmp0(imageOrientation, "rotate-90") == 0) ret=TRUE;
+        g_free(imageOrientation);
+    }
+    return ret;
+}
+
+//resize and crop to a square image
+static GdkPixbuf *resizeImage(GdkPixbuf *input,int width, int height, int needRotation,int size){
+    int compX=0,compY=0,cropX=0,cropY=0;
+    float ratio;
+     if (width>height) {
+        compY=size;
+        ratio=(float)width/height; //1 float is enough pour do the operation in float
+        compX=size * ratio +1; //round to the upper int
+    } else if (width==height) {
+        compX=size;
+        compY=size;        
+    } else {
+        compX=size;
+        ratio=(float)height/width; 
+        compY=size * ratio +1; 
+    }
+    
+    //calculate cropX cropY
+    if (compY>compX) {
+           int diff=compY-compX;
+           cropY=diff/2;   //round to lower int
+           cropX=0; 
+    } else {
+           int diff=compX-compY;
+           cropX=diff/2;   
+           cropY=0; 
+    }
+    GdkPixbuf *scaled=gdk_pixbuf_scale_simple (input,compX,compY,GDK_INTERP_BILINEAR);
+    GdkPixbuf *cropped = gdk_pixbuf_new_subpixbuf (scaled,cropX,cropY,size,size);
+    GdkPixbuf *rotated =NULL;
+    if (needRotation) {
+        rotated= gdk_pixbuf_rotate_simple(cropped,GDK_PIXBUF_ROTATE_CLOCKWISE);
+        g_object_unref(cropped);
+    }
+    g_object_unref(input);
+    g_object_unref(scaled);
+    return (needRotation)?rotated:cropped;
+}
+
+/*
+new version with gstreamer
+*/
+static int createThumbnail4Video(const gchar *filePath,const int iDir, const gchar *targetDir, const int size, const long int time){    
+    g_print("\ncreateThumbnail4Video started\n");
+    gchar *fileName = g_path_get_basename (filePath);
+    gchar *targetSubDir=g_strdup_printf ("%s/%i",targetDir,iDir);
+    if (getFileNode(targetSubDir)==-1) mkdir(targetSubDir, 0775); // read, no write for others
+    gchar *targetFilePath =g_strdup_printf ("%s/%s",targetSubDir,fileName);
+
+    if (!gst_is_initialized())  gst_init (NULL, NULL);
+   
+   //playbin
+    GstElement *playbin= gst_element_factory_make ("playbin", "playbin");
+    gchar *uri= gst_filename_to_uri(filePath, NULL); //uri of the video
+    g_print("uri : %s\n",uri);
+    g_object_set (playbin, "uri", uri, NULL);
+    g_object_set (playbin, "audio_sink", gst_element_factory_make ("fakesink", NULL),NULL); // to read the video without rendering
+    g_object_set (playbin, "video_sink", gst_element_factory_make ("fakesink", NULL),NULL); // to read the video without rendering
+
+    //activate
+    gst_element_set_state (playbin, GST_STATE_PAUSED);
+    gst_element_get_state(playbin,NULL,NULL,(gint64)(0)); // Wait for state change to finish.
+
+    //move the cursor
+    gst_element_seek_simple (playbin, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT, GST_SECOND);
+    gst_element_get_state(playbin,NULL,NULL,GST_SECOND); // Wait for seek to finish.
+
+    GstCaps *caps = gst_caps_from_string("image/jpeg"); //caps is the format of capture image/png
+
+    GstSample *sample;
+    g_signal_emit_by_name(playbin, "convert-sample", caps, &sample); //send the signal convert-sample to the element playbin
+    if(sample == NULL) return ERR_GSTREAMER ; //error retrieving sample
+
+    GstCaps *capsOut=gst_sample_get_caps (sample); 
+    
+    //get width and height of the video
+    int width = 0; int height = 0;
+    GstStructure *structure=gst_caps_get_structure (capsOut,0);
+    gst_structure_get_int (structure, "width", &width);
+    gst_structure_get_int (structure, "height", &height);
+    //g_print("width %i, height %i", width, height);
+
+    //retrieve the captured data
+    GstBuffer *buffer=gst_sample_get_buffer(sample);
+    GstMemory *mem =gst_buffer_get_all_memory(buffer);
+    GstMapInfo info;
+    gst_memory_map(mem, &info, GST_MAP_READ);
+    guint8 *data = info.data;
+    gsize bufferSize=info.size;
+    //printf("the size of the buffer %li", bufferSize);
+    
+    //handle the data to crop and resize the capture to a thumbnail
+    GInputStream *input =g_memory_input_stream_new_from_data (data,bufferSize,NULL);
+    GdkPixbuf *pixbuf=gdk_pixbuf_new_from_stream (input,NULL,NULL);
+    gboolean needRotation=needVideoFlip(filePath);// we need rotation
+    pixbuf=resizeImage(pixbuf,width,height,needRotation,92);
+
+    //save to the thumbnail dir 
+    gdk_pixbuf_save (pixbuf,targetFilePath,"png",NULL,NULL);
+    g_object_unref(pixbuf);
+
+    //change modification time
+    setFileTime(targetFilePath,time);
+    g_print("Thumbnail created for %s\n",filePath);
+    g_free(fileName);
+    g_free(targetSubDir);
+    g_free(targetFilePath);  
+
+    return PASSED_CREATED;
+}
+
+
 /*
 Last mod date of a file : number from 1970/01/01
 */

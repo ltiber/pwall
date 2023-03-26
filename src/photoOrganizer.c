@@ -2855,11 +2855,13 @@ static void createPopupMenu(void){
     listAppVideo=g_app_info_get_all_for_type( "video/mp4"); //videos
     listApp=g_list_concat(listApp,listAppVideo);
     //add open a new terminal with echo photoname and cd in the dir of the photo
+    #ifndef FLATPAK
     appInfo = g_app_info_create_from_commandline("echo toto",
                                              "Terminal",
                                              G_APP_INFO_CREATE_NEEDS_TERMINAL,
                                              NULL);
     listApp=g_list_insert (listApp, appInfo, 0);
+    #endif
     appInfo = g_app_info_create_from_commandline("Google Maps",
                                              "Google Maps",
                                              G_APP_INFO_CREATE_NEEDS_TERMINAL,
