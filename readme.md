@@ -1,10 +1,10 @@
 
-pwall: browse your photos
-=============================
+pwall: browse your photos/videos
+================================
 
 ![pwall icon](https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/pwall.png)
 
-pwall is modern style photo viewer and organizer.\
+pwall is modern style photo/video viewer and organizer.\
 It shows the folders of your photos/videos main directory
 in the left pane and a photowall in the right.
 The photowall is a scrolling panel of square thumbnails
