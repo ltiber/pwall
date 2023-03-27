@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-​<component type="desktop-application">
-​  <id>org.pwall.Pwall</id>
-​  <metadata_license>GPL-2.0-or-later</metadata_license>
-​  <project_license>GPL-2.0+</project_license>
-​  <name>pwall</name>
-​  <summary>browse your photos/videos</summary>
-​
-​  <description>    
+<!-- Copyright [2023] [ltiber] -->
+<component type="desktop-application">
+  <id>org.pwall.Pwall</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>GPL-2.0+</project_license>
+  <url type="homepage">https://github.com/ltiber/pwall</url>
+  <name>pwall</name>
+  <summary>browse your photos/videos</summary>
+
+  <description>    
 <p>pwall is modern style photo/video viewer and organizer.</p>
 	<p>
 It shows the folders of your photos/videos main directory
@@ -21,36 +23,36 @@ like smartphones do.</p>
 	(change dates, copy a group of photos to another directory, delete, share, get GPS data...).
 	Clicking on a photo opens it in fullscreen mode. You can continue your navigation in this mode with left and right keys. 
 	I use it as an alternative to Shotwell.
-	​    </p>
-​  </description>
-​
-​  <launchable type="desktop-id">org.pwall.Pwall.desktop</launchable>
-​
-​  <screenshots>
-​    <screenshot type="default">
-​      <caption>pwall screen</caption>
-​      <image>https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/pwallscreenshot.png</image>
-​    </screenshot>
-​    <screenshot>
-​    <caption>pwall folder functions</caption>
-​      <image>https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/pwalloption1.png</image>  
-​    </screenshot>
-​    <screenshot>
-​    <caption>pwall photos functions</caption>
-​      <image>https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/pwalloption2.png</image>  
-​    </screenshot>
+	    </p>
+  </description>
+
+  <launchable type="desktop-id">org.pwall.Pwall.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>pwall screen</caption>
+      <image>https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/pwallscreenshot.png</image>
+    </screenshot>
+    <screenshot>
+    <caption>pwall folder functions</caption>
+      <image>https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/pwalloption1.png</image>  
+    </screenshot>
+    <screenshot>
+    <caption>pwall photos functions</caption>
+      <image>https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/pwalloption2.png</image>  
+    </screenshot>
   </screenshots>
-​
-​  
-​  <provides>
-​    <binary>pwall</binary>
-​  </provides>
-​
-​  <releases>
-​    <release version="2.0-1" date="2023-03-27">
-​      <description>
-​        <p>flatpak support</p>
-​      </description>
-​    </release>
-​  </releases>
-​</component>
+
+  
+  <provides>
+    <binary>pwall</binary>
+  </provides>
+
+  <releases>
+    <release version="2.0-1" date="2023-03-27">
+      <description>
+        <p>flatpak support</p>
+      </description>
+    </release>
+  </releases>
+</component>

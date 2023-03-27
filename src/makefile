@@ -41,7 +41,8 @@ release:
     # gdk_display_get_monitor_at_window doesnt exist in 16.04 replaced by gdk_screen_get_monitor_at_window
     # gtk_menu_popup_at_pointer doesnt exist in 16.04 replaced by gtk_menu_popup
     # gtk_menu_popup_at_widget doesnt exist in 16.04
-    # git memo  $git add . $git commit -m "First commit"$ git remote add origin https://github.com/ltiber/pwall.git$git remote -v$git push origin master
+    # git memo  (dans le repertoire pwall) $git add . $git commit -m "First commit"$ git remote add origin https://github.com/ltiber/pwall.git$git remote -v$git push origin master
+	# git memo (suite) use git pull origin master  (si on a une desynchro entre le git serveur et local. Ceci remettra à jour le local)
     # sudo apt-get install ffmpeg 
     # ajout dependance avec ffmpeg et gstreamer libgstreamer1.0-0 et autres plugins
     
