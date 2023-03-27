@@ -1,7 +1,7 @@
 {
     "app-id": "org.pwall.Pwall",
     "runtime": "org.gnome.Platform",
-    "runtime-version": "3.24",
+    "runtime-version": "40",
     "sdk": "org.gnome.Sdk",
     "command": "pwall",
     "modules": [
@@ -9,14 +9,16 @@
           "name": "pwall",
           "buildsystem": "simple",
           "build-commands": [
-		"install -D flatpak/pwall-flatpak.desktop /app/share/applications/org.pwall.Pwall.desktop",
-		"install -D res/pwall/pwall.png /app/share/icons/hicolor/128x128/apps/org.pwall.Pwall.png",
-                "install -D res/pwall/help.html /app/extra/export/share/help.html",
-                "install -D res/pwall/noimage.png /app/extra/export/share/noimage.png",
-		"install -D res/pwall/clearbackup.sh /app/extra/export/share/clearbackup.sh",
-                "make -f makefile-flatpak",
-		"install -D pwall /app/bin/pwall",
-		"install -D flatpak/jhead /app/bin/jhead"
+			"install -D flatpak/pwall-flatpak.desktop /app/share/applications/org.pwall.Pwall.desktop",
+			"install -D res/pwall/pwall.png /app/share/icons/hicolor/128x128/apps/org.pwall.Pwall.png",
+		    "install -D res/pwall/help.html /app/share/help.html",
+		    "install -D res/pwall/noimage.png /app/share/noimage.png",
+			"install -D res/pwall/novideo.png /app/share/novideo.png",
+		    "install -D res/pwall/videoIcon.png /app/share/videoIcon.png",
+			"install -D res/pwall/clearbackup.sh /app/share/clearbackup.sh",
+		    "make -f makefile-flatpak",
+			"install -D pwall /app/bin/pwall",
+			"install -D flatpak/jhead /app/bin/jhead"
             ],
           "sources": [
               {
@@ -26,6 +28,7 @@
           ]
       }
   ],
+
     "finish-args": [
      "--socket=x11",
      "--share=network",

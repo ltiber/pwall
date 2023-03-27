@@ -1,24 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
-​<!--  -->
 ​<component type="desktop-application">
 ​  <id>org.pwall.Pwall</id>
 ​  <metadata_license>GPL-2.0-or-later</metadata_license>
 ​  <project_license>GPL-2.0+</project_license>
 ​  <name>pwall</name>
-​  <summary>browse your photos</summary>
+​  <summary>browse your photos/videos</summary>
 ​
 ​  <description>    
-<p>pwall is modern style photo viewer and organizer.</p>
+<p>pwall is modern style photo/video viewer and organizer.</p>
 	<p>
-It shows the folders of your photos main directory
+It shows the folders of your photos/videos main directory
 in the left pane and a photowall in the right.
 The photowall is a scrolling panel of square thumbnails
-giving a preview of each photo.</p>
+giving a preview of each photo/video.</p>
 	<p> Loading and unloading of this 
 scrolling panel is made dynamicaly, viewing page by viewing page
 like smartphones do.</p>
 	<p>
-	It also allows you to have basics management of photos
+	It also allows you to have basics management of photos/videos
 	(change dates, copy a group of photos to another directory, delete, share, get GPS data...).
 	Clicking on a photo opens it in fullscreen mode. You can continue your navigation in this mode with left and right keys. 
 	I use it as an alternative to Shotwell.
@@ -48,9 +47,9 @@ like smartphones do.</p>
 ​  </provides>
 ​
 ​  <releases>
-​    <release version="1.0-3" date="2019-12-16">
+​    <release version="2.0-1" date="2023-03-27">
 ​      <description>
-​        <p>support OSX and flatpak</p>
+​        <p>flatpak support</p>
 ​      </description>
 ​    </release>
 ​  </releases>
