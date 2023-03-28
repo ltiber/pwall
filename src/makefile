@@ -20,7 +20,7 @@ installosx:
 release:
     #check version number in deb/DEBIAN/control and in make file
     #if you've changed resources like  png or help copy them in the deb dir
-	dpkg -b ../deb/ ../release/pwall-2.0-1.deb
+	dpkg -b ../deb/ ../release/pwall-2.1-0.deb
   
   
   
