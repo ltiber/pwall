@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=pwall
-Comment=browse your photos through a photo wall. 
+Comment=browse your photos and videos through a photo wall. 
 Exec=pwall
-Icon=org.pwall.Pwall
+Icon=io.github.pwall.Pwall
 Terminal=false
 Categories=Photography;
