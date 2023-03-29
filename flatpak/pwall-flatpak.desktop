@@ -3,6 +3,6 @@ Type=Application
 Name=pwall
 Comment=browse your photos and videos through a photo wall. 
 Exec=pwall
-Icon=io.github.pwall.Pwall
+Icon=io.github.ltiber.Pwall
 Terminal=false
 Categories=Photography;

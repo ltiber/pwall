@@ -1,12 +1,12 @@
 Package: pwall
-Version: 2.0-1
+Version: 2.1-0
 Maintainer: Leon
 Architecture: amd64
 Section: Graphics & Photography
 Depends: libgtk-3-0 (>= 3.18.9), xdg-utils (>=1.1.1), jhead, ffmpeg, libgstreamer1.0-0, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-libav, gstreamer1.0-pulseaudio
 Priority: optional
 Installed-Size: 274
-Description:  pwall is modern style photo viewer and organizer.
+Description:  pwall is modern style photos/videos viewer and organizer.
  It shows the folders of your photos/videos main directory
  in the left pane and a photowall in the right.
  The photowall is a scrolling panel of square thumbnails

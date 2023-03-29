@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright [2023] [ltiber] -->
 <component type="desktop-application">
-  <id>io.github.pwall.Pwall</id>
+  <id>io.github.ltiber.Pwall</id>
   <metadata_license>FSFAP</metadata_license>
   <project_license>GPL-2.0+</project_license>
   <url type="homepage">https://github.com/ltiber/pwall</url>
@@ -26,7 +26,7 @@ like smartphones do.</p>
 	    </p>
   </description>
 
-  <launchable type="desktop-id">io.github.pwall.Pwall.desktop</launchable>
+  <launchable type="desktop-id">io.github.ltiber.Pwall.desktop</launchable>
 
   <screenshots>
     <screenshot type="default">
