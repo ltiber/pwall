@@ -26,6 +26,10 @@ like smartphones do.</p>
 	    </p>
   </description>
 
+  <categories>
+    <category>Graphics</category>
+  </categories>
+
   <launchable type="desktop-id">io.github.ltiber.Pwall.desktop</launchable>
 
   <screenshots>
