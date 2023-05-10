@@ -6,7 +6,7 @@ snap/
 pwall.app.zip
 todo.txt
 src/.vscode/
-.flatpak-builder/
+.flatpak-builder/**/
 
 
 
