@@ -29,6 +29,19 @@ like smartphones do.</p>
   <categories>
     <category>Graphics</category>
   </categories>
+  <keywords>
+    <keyword>album</keyword>
+    <keyword>organize</keyword>
+    <keyword>gallery</keyword>
+    <keyword>image</keyword>
+    <keyword>images</keyword>
+    <keyword>photo</keyword>
+    <keyword>photos</keyword>
+    <keyword>picture</keyword>
+    <keyword>pictures</keyword>
+    <keyword>video</keyword>
+    <keyword>videos</keyword>
+  </keywords>
 
   <launchable type="desktop-id">io.github.ltiber.Pwall.desktop</launchable>
 
