@@ -51,6 +51,10 @@ Retrieve the width and height from header of the jpeg.
 We give the int var to be updated through &var1 et &var2.
 */
 int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *height) {
+    /* TO debug a file
+    gchar *debugFileName="Quineroulerapas.jpg";
+    gchar *_baseName = g_path_get_basename (filePath);
+    if (g_strcmp0(_baseName, debugFileName) == 0) verbose=TRUE;*/
     timeIn();
     FILE *infile=fopen(filePath, "rb");
     if (!infile) return FALSE;
@@ -71,6 +75,7 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
     while(i<LIMIT){
         second=fgetc(infile);        
         if (first == 0xff && second == 0xe1){
+            if (verbose) g_print("\n0xffe1 found at adress 0x%04x",ftell(infile));
             //longueur du segment est dans les 2 prochains bytes
             first=fgetc(infile);
             second=fgetc(infile);
@@ -80,6 +85,7 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
             //sauter
             //g_print("\ndeplacement dans le segment de %ld -2\n",sectionLength); //debug
             fseek(infile, sectionLength-2, SEEK_CUR);
+            if (verbose) g_print("\njump first section by 0x%04x to adress 0x%04x",sectionLength-2,ftell(infile));
             found=TRUE;
             //g_print("meta2 length%ld\n", sectionLength );
             //g_print("\nfound at cursor %i\n",i);
@@ -90,25 +96,28 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
         i++;
     }
     if (found){
-        //get the length of the section and jump it while we have 0xffeN which means a section
+        //get the length of the section and jump it while we have 0xffeN which means a section (fix where N is in hex not only num)
         first=fgetc(infile);
         second=fgetc(infile);
-        //g_print("\nafterexifsection :%02X %02X\n",first,second);
+        if (verbose) g_print("\ncontent of the start of the session :0x%02X%02X\n",first,second);
         int j=1;
-        while (first == 0xff && second >= 0xe1 && second <=0xe9){
+        while (first == 0xff && second >= 0xe1 && second <=0xef){ //fix with <0xef in place of e9
             //g_print("%isection\n",j);
             first=fgetc(infile); //length
             second=fgetc(infile); //length
             sectionLength=second + (first << 8);
             fseek(infile, sectionLength-2, SEEK_CUR);
+            if (verbose) g_print("\njump section by 0x%04x to adress 0x%04x",sectionLength-2,ftell(infile));
             first=fgetc(infile);
-            second=fgetc(infile); 
+            second=fgetc(infile);
+            if (verbose) g_print("\ncontent of the start of the session :0x%02X%02X\n",first,second); 
             j++;
         }
     } else{
         fseek(infile, 4, SEEK_SET); //s'il n'y a pas d'exif section on retourne en haut du fichier
         first = fgetc(infile); 
-        second=fgetc(infile); 
+        second=fgetc(infile);
+        if (verbose) g_print("\nNo exif data jump to 0x0004 at the BOF"); 
     }
     //g_print("\nfirst et second avant le dernier loop :%02X %02X\n",first,second);
     found=FALSE; //reinit
@@ -150,6 +159,7 @@ int  getPhotoSizeJPG(const char *filePath, unsigned int *width, unsigned int *he
         timeOut(fileName,"getImageSize");
         g_free(fileName);
     }
+    
     return found;
 }
 
@@ -416,8 +426,9 @@ static int createThumbnail4DirInternal(const gchar *dirPath,const gchar *targetD
             g_free (_dirPath);
         } else { //if not needed if (pFileEntry->d_type==DT_REG || pFileEntry->d_type==DT_LNK)
             //g_print("isFile\n");
-            
-            if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name) || hasVideoExt(pFileEntry -> d_name)) ) {
+            //workaround temporary we exclude video because of a memory leak in gstreamer usage
+            //if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name) || hasVideoExt(pFileEntry -> d_name)) ) {
+            if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name)) ) {
                 //g_print("isJPEG\n");
                 counter++;
                 gchar *filePath =g_strdup_printf ("%s/%s",dirPath,fileName);
@@ -522,7 +533,8 @@ int createThumbnail(const gchar *filePath, const int iDir, const gchar *targetDi
 }
 
 /*
-if photoLastModified<=thumbnailLastModified we don't need to create new thumbnail
+if photoLastModified!=thumbnailLastModified we don't need to create new thumbnail
+fix 2023/06/09
 */
 static int thumbnailNeedsRefresh(const gchar *filePath, const int iDir, const gchar *targetDir){
     //check if thumbnail already exists
@@ -531,10 +543,11 @@ static int thumbnailNeedsRefresh(const gchar *filePath, const int iDir, const gc
     long int thumbnailLastModified=getFileTime(targetFilePath);
     if (thumbnailLastModified!=-1){ //thumbnail exists
         long int photoLastModified=getFileTime(filePath);
-        if (photoLastModified!=thumbnailLastModified) {
-            //g_print("thumbnail already exist for %s\n",filePath);
+        //g_print("\nneed2berefresh for %s (%ld) target %s (%ld)\n",filePath,photoLastModified,targetFilePath,thumbnailLastModified);
+        //if (photoLastModified!=thumbnailLastModified) { //old bug we change != to == 
+        if (photoLastModified==thumbnailLastModified) {            
             g_free(targetFilePath);       
-            return FALSE;//if photoLastModified<=thumbnailLastModified we don't create new thumbnail
+            return FALSE;//if photoLastModified!=thumbnailLastModified we don't create new thumbnail
         }
     }
     g_free(targetFilePath);        
@@ -543,7 +556,7 @@ static int thumbnailNeedsRefresh(const gchar *filePath, const int iDir, const gc
     
 
 static int createThumbnail4Photo(const gchar *filePath, const int iDir, const gchar *targetDir, const int size, const long int time, const gboolean removeExt){
-    g_print("\ncreateThumbnail4Photo started\n");
+    g_print("\ncreateThumbnail4Photo %s started\n",filePath);
     gchar *fileName = g_path_get_basename (filePath);
     gchar *targetSubDir=g_strdup_printf ("%s/%i",targetDir,iDir);
     if (getFileNode(targetSubDir)==-1) mkdir(targetSubDir, 0775); // read, no write for others
@@ -852,11 +865,21 @@ static int createThumbnail4Video(const gchar *filePath,const int iDir, const gch
     GdkPixbuf *pixbuf=gdk_pixbuf_new_from_stream (input,NULL,NULL);
     gboolean needRotation=needVideoFlip(filePath);// we need rotation
     pixbuf=resizeImage(pixbuf,width,height,needRotation,92);
-
+    
+    
     //save to the thumbnail dir 
     gdk_pixbuf_save (pixbuf,targetFilePath,"png",NULL,NULL);
-    g_object_unref(pixbuf);
 
+    //close and release buffers and gst elements 
+    g_object_unref(pixbuf);
+    g_input_stream_close(input,NULL,NULL);
+    gst_sample_unref(sample);
+    gst_element_set_state (playbin, GST_STATE_NULL);
+    gst_object_unref (playbin);
+
+    //gst_memory_unref(mem);
+    //gst_buffer_unref(buffer);
+    
     //change modification time
     setFileTime(targetFilePath,time);
     g_print("Thumbnail created for %s\n",filePath);
