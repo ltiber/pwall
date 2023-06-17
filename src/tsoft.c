@@ -766,6 +766,10 @@ static gboolean needVideoFlip(const gchar *filePath){
         if (g_strcmp0(imageOrientation, "rotate-90") == 0) ret=TRUE;
         g_free(imageOrientation);
     }
+
+    //gst_tag_list_unref(tags); //it fails it seems that the counter is 0. So it doesn't need to be freed 
+    gst_discoverer_info_unref(info);
+
     return ret;
 }
 
@@ -871,14 +875,16 @@ static int createThumbnail4Video(const gchar *filePath,const int iDir, const gch
     gdk_pixbuf_save (pixbuf,targetFilePath,"png",NULL,NULL);
 
     //close and release buffers and gst elements 
-    g_object_unref(pixbuf);
-    g_input_stream_close(input,NULL,NULL);
-    gst_sample_unref(sample);
+    g_object_unref(pixbuf); //clear the pixel buffer
+    g_input_stream_close(input,NULL,NULL); //clear input buffer
+    //gst_memory_unref(mem); failed
+    //gst_buffer_unref(buffer); failed hope it is cleared with the sample
+    gst_sample_unref(sample); //capsout will be cleared with sample
+    gst_caps_unref(caps); //clear the input caps
     gst_element_set_state (playbin, GST_STATE_NULL);
     gst_object_unref (playbin);
-
-    //gst_memory_unref(mem);
-    //gst_buffer_unref(buffer);
+    
+    //gst_deinit(); //bloque le systeme ne marche pas
     
     //change modification time
     setFileTime(targetFilePath,time);
