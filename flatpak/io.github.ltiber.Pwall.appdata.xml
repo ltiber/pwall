@@ -66,6 +66,11 @@ like smartphones do.</p>
   </provides>
 
   <releases>
+    <release version="2.1-5" date="2023-09-10">
+      <description>
+        <p>Use of the OpenUri Portal to give a global openWith feature</p>
+      </description>
+    </release>
     <release version="2.1-4" date="2023-06-17">
       <description>
         <p>workaround2 for video thumbnail creation</p>

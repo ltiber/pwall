@@ -75,6 +75,8 @@ static void treeSelectionChangedCB (GtkTreeSelection *selection, gpointer data);
 static gint sortIterCompareCB (GtkTreeModel *model, GtkTreeIter  *a, GtkTreeIter  *b, gpointer userdata);
 static int treeNewSelectionCB (gpointer user_data);
 static void openWithCB(GtkWidget* widget, gpointer data);
+static void openWithCB4Flatpak(GtkWidget* widget, gpointer data);
+static void locateInGoogleMaps(GtkWidget* widget, gpointer data);//used for flatpak env
 static void mailToCB(GtkWidget* widget, gpointer data);
 static void whatsappCB(GtkWidget* widget, gpointer data);
 static void facebookCB(GtkWidget* widget, gpointer data);
@@ -2855,13 +2857,11 @@ static void createPopupMenu(void){
     listAppVideo=g_app_info_get_all_for_type( "video/mp4"); //videos
     listApp=g_list_concat(listApp,listAppVideo);
     //add open a new terminal with echo photoname and cd in the dir of the photo
-    #ifndef FLATPAK
     appInfo = g_app_info_create_from_commandline("echo toto",
                                              "Terminal",
                                              G_APP_INFO_CREATE_NEEDS_TERMINAL,
                                              NULL);
     listApp=g_list_insert (listApp, appInfo, 0);
-    #endif
     appInfo = g_app_info_create_from_commandline("Google Maps",
                                              "Google Maps",
                                              G_APP_INFO_CREATE_NEEDS_TERMINAL,
@@ -2903,10 +2903,21 @@ static void createPopupMenu(void){
         #endif
     }
 
+    #ifndef FLATPAK
     pMenuItem = gtk_menu_item_new_with_label("Open With");  
     gtk_menu_shell_append(GTK_MENU_SHELL(pMenuPopup), pMenuItem);
-    gtk_menu_item_set_submenu(GTK_MENU_ITEM(pMenuItem), pSubMenu);   
-    
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(pMenuItem), pSubMenu);
+
+    #else
+    pMenuItem = gtk_menu_item_new_with_label("Open With");
+    g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(openWithCB4Flatpak),NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(pMenuPopup), pMenuItem);
+
+    pMenuItem = gtk_menu_item_new_with_label("Location on the map");
+    g_signal_connect(G_OBJECT(pMenuItem), "activate", G_CALLBACK(locateInGoogleMaps),NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(pMenuPopup), pMenuItem);
+    #endif
+
     pSubMenu = gtk_menu_new();
     pMenuItem = gtk_menu_item_new_with_label("Mail");
     gtk_menu_shell_append(GTK_MENU_SHELL(pSubMenu), pMenuItem);
@@ -3084,6 +3095,59 @@ static void openWithCB(GtkWidget* widget, gpointer data){
         #endif
     }
 }
+
+/*
+    The default openWithCB is not working with flatpak because g_app_info_get_all_for_type() are not working in flatpak sandbox 
+    (they only retrieve mime type applications in the sandbox not in the system) 
+    so we can't list the apps to open in the popup
+    But we can open a certain file with the external mime application portal
+    you can use g_app_info_launch_default_for_uri (file_uri, NULL, &error);
+*/
+static void openWithCB4Flatpak(GtkWidget* widget, gpointer data){
+    char *_fullPath=NULL;
+    if (activeWindow == VIEWER)         
+        _fullPath=viewedFullPath;
+    if (activeWindow == ORGANIZER) {
+        int i=whichPhotoHasTheFocus();
+        if (i!=-1) {
+            PhotoObj *_pPhotoObj=g_ptr_array_index(photoArray,i); 
+            _fullPath=_pPhotoObj->fullPath;
+        }       
+    }
+    gchar *uri= g_filename_to_uri(_fullPath, NULL, NULL);
+    g_print("\nopenWithCB4Flatpak uri= %s\n",uri);
+    g_app_info_launch_default_for_uri (uri, NULL, NULL);
+}
+
+/*
+used only for flatpak envi because this option can't be in "open with" menu
+*/
+static void locateInGoogleMaps(GtkWidget* widget, gpointer data){
+   char *_fullPath=NULL;
+    if (activeWindow == VIEWER)         
+        _fullPath=viewedFullPath;
+    if (activeWindow == ORGANIZER) {
+        int i=whichPhotoHasTheFocus();
+        if (i!=-1) {
+            PhotoObj *_pPhotoObj=g_ptr_array_index(photoArray,i); 
+            _fullPath=_pPhotoObj->fullPath;
+        }       
+    }
+    if (hasVideoExt(_fullPath)){
+        updateStatusMessage("just photos can run the google map option!");            
+    } else {
+        char *gps=getGPSData(_fullPath); //gps data are reformatted to fit to google maps
+        if (gps!=NULL){        
+            char *cmd = g_strdup_printf("xdg-open \"http://www.google.com/maps/place/%s\"",g_strescape(gps,"°")); 
+            //g_print("\ncmd %s",cmd);
+            g_spawn_command_line_async (cmd, NULL);
+            g_free(cmd);
+        } else {
+            updateStatusMessage("No GPS data in the photo!");
+        }        
+    } 
+}
+
 //Command_line_arguments_ compliant with geary or thunderbird in LINUX
 //xdg-email --attach "/home/leon/Cloud Pictures/2003-08equihen/DSCN0282.JPG"
 //in OSX 
