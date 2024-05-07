@@ -7,7 +7,9 @@
   <url type="homepage">https://github.com/ltiber/pwall</url>
   <name>pwall</name>
   <summary>browse your photos/videos</summary>
-
+  <developer id="tld.vendor">
+    <name>ltiber</name>
+  </developer>
   <description>    
 <p>pwall is modern style photo/video viewer and organizer.</p>
 	<p>
