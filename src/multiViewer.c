@@ -39,7 +39,7 @@ static gboolean notFullScreen=FALSE;
 char *viewedFullPath; //full path of the current photo
 int viewedDirNode; // idNode  Folder for the current photo 
 GPtrArray *viewedFileSet= NULL; //set of files filled with the current folder
-int viewedIndex;  //index is the place of the photo/video in the CURRENT FOLDER 
+int viewedIndex;  //this index is the place of the photo/video in the CURRENT FOLDER 
 
 int organizerNeed2BeRefreshed=FALSE; //to call refreshArray when we destroy the viewer
 GtkWidget *winViewer;
@@ -287,7 +287,12 @@ static void windowDestroyCB(GtkWidget *pWidget, gpointer pData){
     if (organizerNeed2BeRefreshed){
         refreshPhotoArray(TRUE);
         organizerNeed2BeRefreshed=FALSE;
+    } else {
+        PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,initViewedIndex); //to get the initViewedfullpath
+        //if we've just viewed a single photo with <enter> no navigation neither action on photos we don't do any changefocus or scroll in the organiser which will change our selection
+        if (pPhotoObj!=NULL && g_strcmp0(pPhotoObj->fullPath,viewedFullPath) == 0) return;
     }
+ 
     /*scroll and setfocus (the scroll is done with the changefocus function)*/
     int indexInPhotoArray=findPhotoFromFullPath(viewedFullPath);        
     viewedRow=getPhotoRow(indexInPhotoArray); //update the viewedRow (it can have changed after refreshPhotoArray)

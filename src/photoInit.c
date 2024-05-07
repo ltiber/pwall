@@ -115,8 +115,10 @@ int main(int argc, char *argv[]){
     g_print("new application - resources in %s\n",resDir);
     int status;
     //char *locale = setlocale (LC_ALL, ""); //check locale for glib sorting : issue in flatpak runtime Gtk-WARNING **: Locale not supported by C library
-    //g_print("local%s",locale);
-    app = gtk_application_new ("com.tsoft.pwall", G_APPLICATION_NON_UNIQUE | G_APPLICATION_HANDLES_OPEN);//G_APPLICATION_HANDLES_OPEN to get the command line
+    //g_print("local%s",locale); 
+    //com.tsoft.pwall used to be the id of the app. But the new one respect ip dns constraints 
+    //app = gtk_application_new ("io.github.ltiber.Pwall", G_APPLICATION_NON_UNIQUE );//G_APPLICATION_HANDLES_OPEN to get the command line
+    app = gtk_application_new ("io.github.ltiber.Pwall", G_APPLICATION_NON_UNIQUE | G_APPLICATION_HANDLES_OPEN); //G_APPLICATION_HANDLES_OPEN to autorize the command line with parameters (argv[1])
     g_signal_connect (app, "activate", G_CALLBACK (appActivated), NULL);
     g_signal_connect (app, "startup", G_CALLBACK (appStarted), NULL);
     g_signal_connect (app, "open", G_CALLBACK (appOpened), NULL);
@@ -137,7 +139,16 @@ void appOpened (GApplication *application, GFile **files, gint n_files, const gc
 
 static void quitCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
     //scStopThread=TRUE; //it will stop the thread but not in the scope
+    g_print("quitCB");
     g_application_quit(G_APPLICATION(app));
+}
+
+/* open multi-instances of the app*/
+static void newWindowCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
+    g_print("new_windowCB");
+    char *cmd = g_strdup_printf("pwall"); 
+    g_spawn_command_line_async (cmd, NULL); //run a new app
+    g_free(cmd);
 }
 
 static void refreshThumbnailsCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
@@ -164,7 +175,7 @@ void helpCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
 }
 
 const GActionEntry app_actions[] = {
-    { "refreshThumbnails", refreshThumbnailsCB },{ "chgPhotoDir", chgPhotoDirCB },{ "help", helpCB }, { "quit", quitCB }
+    {"new-window",newWindowCB},{ "refreshThumbnails", refreshThumbnailsCB },{ "chgPhotoDir", chgPhotoDirCB },{ "help", helpCB }, { "quit", quitCB }
 };
 
 /*
@@ -174,6 +185,7 @@ void initPrimaryMenu(GtkWidget *menuButton){
     GMenu *menu;
     g_action_map_add_action_entries (G_ACTION_MAP (app), app_actions, G_N_ELEMENTS (app_actions), app);
     menu = g_menu_new ();
+    g_menu_append (menu,"New Window","app.new-window");
     g_menu_append (menu,"Refresh Thumbnails","app.refreshThumbnails");
     g_menu_append (menu,"Change photos directory","app.chgPhotoDir");
     g_menu_append (menu, "Help", "app.help");

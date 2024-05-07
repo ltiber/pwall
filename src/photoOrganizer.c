@@ -50,7 +50,10 @@ static void multiSelectPhoto(int index, int mode);
 static void clearSelected(int first,int last);
 static int firstSelected(void);
 static int lastSelected(void);
+static int findNearestSelected(int index);
 static void setSelected(int first, int last);
+static GArray *getAllSelected(void);
+static void setSelectedFromArray(GArray *selectedArray);
 static GArray *rowsSelected(void);
 static gboolean  keyPressCallBack(GtkWidget *widget,  GdkEventKey *event);
 static int keyPostponed(gpointer user_data);
@@ -131,7 +134,7 @@ static int whatTypeIsSelected(void);
     
 //private global variable (static makes the variable private)
 static GtkWidget *pWindow;
-static GtkWidget *scPhotoWall;
+static GtkWidget *scPhotoWall,*leftPanel;
 static GtkWidget *photoWall;
 static GtkWidget *pButton;
 static GtkWidget *pTree;
@@ -163,6 +166,7 @@ static GPtrArray *scNewThumbnails2Create=NULL;
 static GPtrArray *scWaitingNewThumbnails;
 static GArray *scWaitingLabels;
 static int scFocusIndexPending=-1;
+static GArray *scSelectionPending=NULL;
 static gboolean newFocusFromRefreshPhotoWall=FALSE;
 static int scSelectingFolder=FALSE; //used to change the tree selection when the focus in the photowall get to a photo belonging to another directory
 static int scSelectingFolderDisabled=FALSE; //used when the user change his treeselecion
@@ -172,7 +176,7 @@ static GPtrArray *searchRes=NULL; //used for searching
 static int searchIndex=-1; //used for the up and down searching button
 static int _keyPostponed=FALSE;
 static GtkWidget *_waitingScreen;
-static gboolean expandCollapseTreePending; 
+static gboolean expandCollapseTreePending;
 
 //public variable accessible for all the .c modules
 //you need extern on the .h to let it run
@@ -197,7 +201,7 @@ int scRowsInPage=-1;
 
 //main function
 void photoOrganizerInit(GtkWidget *waitingScreen) {            
-    GtkWidget *pVBox,  *leftPanel ,*pMainOverlay, *pHBox;    
+    GtkWidget *pVBox ,*pMainOverlay, *pHBox;    
     GtkWidget *pLabel,*pLabelLeft;
     GtkWidget *pScrolledTree;
 
@@ -314,24 +318,13 @@ void photoOrganizerInit(GtkWidget *waitingScreen) {
     //add 2 layers overlay to managed a status message 
     pMainOverlay = gtk_overlay_new ();
     gtk_container_add(GTK_CONTAINER(pWindow), pMainOverlay);
-
-    /*menu layer adapt with https://developer.gnome.org/ApplicationMenu/
-    GtkWidget *pMenuBox =gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_box_set_homogeneous (GTK_BOX(pMenuBox), FALSE);
-    gtk_container_add(GTK_CONTAINER(pMainOverlay), pMenuBox); 
-    
-    //add the main menu
-    pMenuBar = gtk_menu_bar_new();
-    createMainMenu();   
-    //gtk_box_pack_start(GTK_BOX(pHBox), pMenuBar, FALSE, FALSE, 0);
-    //gtk_box_pack_start(GTK_BOX(pMenuBox), pMenuBar, FALSE, FALSE, 0);
-    */
     
     // 1st layer the content
     pHBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_box_set_homogeneous (GTK_BOX(pHBox), FALSE);
+
+
     gtk_container_add(GTK_CONTAINER(pMainOverlay), pHBox);
-    //gtk_box_pack_start(GTK_BOX(pMenuBox), pHBox, TRUE, TRUE,0);
     
     // 2nd layer the status message
     pStatusMessage=gtk_label_new("                   ");
@@ -352,44 +345,46 @@ void photoOrganizerInit(GtkWidget *waitingScreen) {
     
     
     
-    
     //create a left panel
     leftPanel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_box_pack_start(GTK_BOX(pHBox), leftPanel, TRUE, TRUE, 0);
 
+    gtk_box_pack_start(GTK_BOX(pHBox), leftPanel, FALSE, FALSE, 0);
 
     //we add the searching capabilities
-    searchBar = gtk_search_bar_new();
-    gtk_search_bar_set_search_mode(GTK_SEARCH_BAR(searchBar),TRUE);
+    //searchBar = gtk_search_bar_new(); we no more use this widget because it leads to alignment and width issues
+    //gtk_search_bar_set_search_mode(GTK_SEARCH_BAR(searchBar),TRUE);
+    searchBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+
     searchEntry=gtk_search_entry_new ();
     
     GtkWidget *searchPanel= gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_box_set_homogeneous(GTK_BOX(searchPanel),FALSE);
     gtk_box_pack_start (GTK_BOX (searchPanel), searchEntry, FALSE, FALSE,0);
 
-    btnDown=gtk_button_new (); //gtk_widget_set_can_focus (btnUp, FALSE);
+    btnDown=gtk_button_new (); 
     GtkWidget *imgDown =gtk_image_new_from_icon_name("go-down-symbolic",GTK_ICON_SIZE_BUTTON);
     gtk_container_add (GTK_CONTAINER (btnDown), imgDown);
     gtk_box_pack_start(GTK_BOX(searchPanel), btnDown, FALSE, FALSE, 0);
     g_signal_connect (G_OBJECT (btnDown),"button-press-event",G_CALLBACK (nextCB), NULL); //click
     g_signal_connect (G_OBJECT (btnDown),"key-press-event",G_CALLBACK (nextCB), NULL); //click
     
-    btnUp=gtk_button_new (); //gtk_widget_set_can_focus (btnUp, FALSE);
+    btnUp=gtk_button_new (); 
     GtkWidget *imgUp =gtk_image_new_from_icon_name("go-up-symbolic",GTK_ICON_SIZE_BUTTON);
     gtk_container_add (GTK_CONTAINER (btnUp), imgUp);
     gtk_box_pack_start(GTK_BOX(searchPanel), btnUp, FALSE, FALSE, 0);
     g_signal_connect (G_OBJECT (btnUp),"button-press-event",G_CALLBACK (previousCB), NULL); //click
     g_signal_connect (G_OBJECT (btnUp),"key-press-event",G_CALLBACK (previousCB), NULL); //click
     
-    gtk_container_add (GTK_CONTAINER (searchBar), searchPanel);
-    gtk_box_pack_start(GTK_BOX(leftPanel), searchBar, FALSE, FALSE, 0);
+    //gtk_container_add (GTK_CONTAINER (searchBar), searchPanel);
+    gtk_box_pack_start(GTK_BOX(searchBar), searchPanel, TRUE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(leftPanel), searchBar, FALSE, FALSE, 5);
         
     //add scrolled panel to left panel
     pScrolledTree = gtk_scrolled_window_new (NULL, NULL);
     gtk_container_set_border_width (GTK_CONTAINER (pScrolledTree), 0);
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (pScrolledTree),
-                                  GTK_POLICY_NEVER,
-                                  GTK_POLICY_AUTOMATIC); //scroll vertical
+                                  GTK_POLICY_AUTOMATIC,
+                                  GTK_POLICY_AUTOMATIC); //used when the user resize the app window
     gtk_box_pack_start(GTK_BOX(leftPanel), pScrolledTree, TRUE, TRUE, 0);                                  
     
     //we prepare the sorting facilities
@@ -419,17 +414,18 @@ void photoOrganizerInit(GtkWidget *waitingScreen) {
     scPhotoWall = gtk_scrolled_window_new (NULL, NULL);
     gtk_container_set_border_width (GTK_CONTAINER (scPhotoWall), 0);
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scPhotoWall),
-                                  GTK_POLICY_NEVER,
-                                  GTK_POLICY_AUTOMATIC); //scroll vertical
-    gtk_box_pack_start(GTK_BOX(pHBox), scPhotoWall, FALSE, FALSE, 0);
+                                  GTK_POLICY_AUTOMATIC,
+                                  GTK_POLICY_AUTOMATIC); //used when the user resize the app window
+    gtk_box_pack_start(GTK_BOX(pHBox), scPhotoWall, TRUE, TRUE, 0);
                                   
     //calculate the size of the photowall panel                              
     preferedWidth=screenWidth*0.6f; //60% of the screen for the photowall
     colMax=((float)preferedWidth -MARGIN)/(MARGIN+PHOTO_SIZE); //How many images by line?
     preferedWidth=colMax*(MARGIN+PHOTO_SIZE) + MARGIN; //We adjust the prefered size
     g_print("%i images/line\n",colMax);
-    gtk_widget_set_size_request(scPhotoWall,preferedWidth,100); //the 100 has no effect, we only play on the width 
-    
+    //gtk_widget_set_size_request(scPhotoWall,preferedWidth,100); //we no more set the size of the photowall but we set the size of the leftpanel 
+    // and the scPhotoWall will get the trailing space (this permits the users to resize the main window as wanted)
+    gtk_widget_set_size_request(leftPanel,screenWidth*0.8f-preferedWidth,100); // the 100 has no effect, we only play on the width 
     //scrolling arrays needed to load the photos dynamically
     scWaitingImages = g_ptr_array_new_with_free_func (NULL);
     scWaitingNewThumbnails = g_ptr_array_new_with_free_func (NULL);
@@ -640,8 +636,15 @@ static gboolean  clickPhotoCB (GtkWidget *event_box, GdkEventButton *event, gpoi
         } else if (event->state & GDK_CONTROL_MASK){
             //ctrl left click
             #ifdef LINUX
+            int alreadySelected=pPhotoObj->selected;
             multiSelectPhoto(arrayIndex->value,CTRL);
-            return FALSE; //we don't run the changefocus
+            //normaly we don't run the changefocus because CTRL can select but also unselect a photo. Here do it only for new selection
+            if (!alreadySelected) changeFocus(arrayIndex->value,TOP,FALSE);
+            else {
+                int nearest=findNearestSelected(arrayIndex->value);
+                changeFocus(nearest,TOP,FALSE);
+            }
+            return FALSE; 
             #elif OSX
             // ctrl click for mac support
             gtk_menu_popup (GTK_MENU(pMenuPopup), NULL, NULL, NULL, NULL, event->button, event->time);  //gtk-3.18
@@ -916,6 +919,10 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
     case GDK_KEY_Q: //let OSX quits the app
         if (event->state & GDK_CONTROL_MASK || event->state & GDK_META_MASK) {return FALSE;}
 		break; 
+    case GDK_KEY_Escape: 
+        newFocus=whichPhotoHasTheFocus();
+        changeFocus(newFocus,TOP,TRUE);
+        break;
     case GDK_KEY_BackSpace:
     case GDK_KEY_Delete: g_print("-delete");deleteDialog(); break;          
     case GDK_KEY_Home: g_print("-home");changeFocus(0,TOP,TRUE);break;
@@ -958,6 +965,20 @@ static int keyPostponed(gpointer user_data){
     return FALSE; //to stop repetition call
 
 }
+/**
+ * To get the correct size of the maximized window, we need to wait for the window manager.
+ * We can't use the screenWidth because of the application banner width that mst be substracted
+*/
+static int setSizeRequestMaximizedDelayed(gpointer data){
+    //int _preferedWidth=GPOINTER_TO_INT(data);
+    //g_print("\ndelayed prefered width %i\n",_preferedWidth);
+    gint maxWidth,maxHeight;
+    gtk_window_get_size (GTK_WINDOW(pWindow), &maxWidth, &maxHeight);
+    gtk_widget_set_size_request(leftPanel,maxWidth-preferedWidth,100); //the 100 has no effect, we only play on the width 
+    g_print("ndelayedmaxwidth-_preferedWidth %i\n",maxWidth-preferedWidth);
+
+    return FALSE;
+}
 
 /*
 window maximized/unmaximized callback
@@ -967,24 +988,29 @@ static void windowMaximizeCallBack(GtkWidget* widget, GParamSpec* property,  gpo
     int isMax=gtk_window_is_maximized(GTK_WINDOW(widget));
     if (isMax){
         g_print("maximized\n");
-        int preferedWidth=screenWidth*0.75f; //75% de l'écran pour le photowall
+        scSelectionPending=getAllSelected();
+        preferedWidth=screenWidth*0.75f; //75% of the screen for photowall widget in maximized mode //int
         colMax=((float)preferedWidth -MARGIN)/(MARGIN+PHOTO_SIZE); //combien d'images par ligne
         preferedWidth=colMax*(MARGIN+PHOTO_SIZE) + MARGIN; //on ajust nickel la prefered size
-        g_print("%i images/line\n",colMax);
-        gtk_widget_set_size_request(scPhotoWall,preferedWidth,100); //the 100 has no effect, we only play on the width 
         int focus=whereIsTheFocus();
         refreshPhotoArray(FALSE);
+        gdk_threads_add_timeout(250, setSizeRequestMaximizedDelayed, NULL); //delayed because the size of the max window is not known yet
         int focusRow=getPhotoRow(focus);
         scroll2Row(focusRow,TOP);
         focusIndexPending=focus;  //postponed the grab focus-> processed by the next run of scShowAllGtk
     } else {
-        g_print("unmaximized\n");
-        int preferedWidth=screenWidth*0.6f; //60% de l'écran pour le photowall
+        g_print("\nunmaximized");
+        gint _width,_height;
+        g_print("selection before unmaximized %i %i\n",firstSelected(),lastSelected());
+        gtk_window_get_size (GTK_WINDOW(pWindow), &_width, &_height);
+        g_print(" %i, %i, %i\n",_width, _height, screenWidth);
+        preferedWidth=screenWidth*0.6f; //60% of the screen for the photowall widget in standart mode //int
         colMax=((float)preferedWidth -MARGIN)/(MARGIN+PHOTO_SIZE); //combien d'images par ligne
         preferedWidth=colMax*(MARGIN+PHOTO_SIZE) + MARGIN; //on ajust nickel la prefered size
         g_print("%i images/line\n",colMax);
-        gtk_widget_set_size_request(scPhotoWall, preferedWidth,100); //the 100 has no effect, we only play on the width 
+        gtk_widget_set_size_request(leftPanel,screenWidth*0.8f-preferedWidth,100); //the 100 has no effect, we only play on the width  
         gtk_window_resize (GTK_WINDOW(pWindow), screenWidth*0.8f, getAdjustedHeight(screenHeight*0.86f));
+        scSelectionPending=getAllSelected();
         int focus=whereIsTheFocus();
         refreshPhotoArray(FALSE);
         int focusRow=getPhotoRow(focus);
@@ -993,6 +1019,7 @@ static void windowMaximizeCallBack(GtkWidget* widget, GParamSpec* property,  gpo
     }
     
 }
+
 
 static void activateFocusCB(GtkWindow *window, gpointer   user_data){
     g_print("\nactivatefocus\n");
@@ -1143,22 +1170,19 @@ static void multiSelectPhoto(int index, int mode){
     if (mode == SHIFT){
         int first=firstSelected();
         int last=lastSelected();
-        if (index<first) {setSelected(index,first);}            
-        else if (index>=first && index<last) {clearSelected(index+1, last);setSelected(first,index);}              
-        else if (index>last) {setSelected(last,index);}              
-        g_print("multiSelectPhoto in shift mode first=%i,last=%i,index=%i\n",first,last,index);
-    }
-    //select all the photos
- /*   if (index==-1){
-        //TODO can be too big so limit to the current Dir
-        for (int i=0;i<photoArray->len;i++){
-            PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,i); 
-            if (pPhotoObj!=NULL ){
-                pPhotoObj->selected=TRUE;
-                gtk_widget_show(pPhotoObj->pFocusBox);
+        if (index<first) {setSelected(index,first-1);}            
+        else if (index>last) {setSelected(last+1,index);}
+        else if (index>first && index<last) { 
+            PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,index); 
+            if (!pPhotoObj->selected) {
+                int nearest=findNearestSelected(index);
+                if (nearest<index) setSelected(nearest+1,index);
+                else if (nearest>index) setSelected(index,nearest-1); 
+                g_print("\nfindNearestSelected=%i\n",findNearestSelected(index));
             }
-        }
-    }*/
+        }                            
+        g_print("\nmultiSelectPhoto in shift mode first=%i,last=%i,index=%i\n",first,last,index);
+    }
 }
 
 /*
@@ -1823,6 +1847,7 @@ static void showSearchBarCB(GtkWidget* widget, gpointer data){
     }
 }
 
+
 /*
 Delete the selection flag & hide the selection box of a range of photos
 */
@@ -1921,15 +1946,79 @@ static int firstSelected(void){
 }
 
 /*
+Find all the selected photos and put them in an array
+*/
+static GArray *getAllSelected(void){
+    GArray *selectedArray = g_array_new(FALSE, FALSE, sizeof (gint));
+    for (int i=0;i<photoArray->len;i++){
+        PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,i);
+        if (pPhotoObj!=NULL &&pPhotoObj->selected) {
+                g_array_append_val(selectedArray,i);
+        }
+    }
+    if (selectedArray->len==0){
+        g_array_free(selectedArray,TRUE);
+        selectedArray=NULL;
+    }
+    return selectedArray;
+}
+
+/*
+change the photowall to the given selection
+*/
+static void setSelectedFromArray(GArray *selectedArray){
+    if (selectedArray==NULL) return;
+    g_print("\nsetSelectedFromArray :");
+    for (int i=0;i<selectedArray->len;i++){
+        int j=g_array_index(selectedArray,int,i);
+        PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,j);
+        if (pPhotoObj!=NULL && !pPhotoObj->selected) {
+            pPhotoObj->selected=TRUE;
+            gtk_widget_show(pPhotoObj->pFocusBox);
+        }       
+    }
+}
+
+/*
 last selected photo found 
 */
 static int lastSelected(void){
-    int ret=-1;
-    for (int i=0;i<photoArray->len;i++){    
+    for (int i=photoArray->len -1;i>0;i--){    
         PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,i);
-        if (pPhotoObj!=NULL &&pPhotoObj->selected) ret=i;
-    }    
-    return ret;
+        if (pPhotoObj!=NULL &&pPhotoObj->selected) return i;
+    }
+    return -1;
+}
+
+/*
+Find the nearest selected photo from an index.
+Used for multiselection when we have several blocks of selection
+*/
+static int findNearestSelected(int index){
+    int first=firstSelected();
+    int last=lastSelected();
+    int retBackward=-1, retForward=-1;
+    int countBackward=0, countForward=0;
+    //main use case : index in between first and last and index is not selected
+    if (index>first && index<last){        
+        // we go backward from index and count not selected photos
+        for (int i=index-1;i>=first;i--){
+            PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,i);
+            if (pPhotoObj!=NULL && pPhotoObj->selected) {retBackward=i;break;}
+            else {countBackward++;}
+        }
+        // we go forward from index and count not selected photos
+        for(int i=index+1;i<=last;i++){
+            PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,i);
+            if (pPhotoObj!=NULL && pPhotoObj->selected) {retForward=i;break;}
+            else {countForward++;}
+        }
+        if (countBackward<=countForward) return retBackward;
+        else return retForward;        
+    } 
+    else if (index>=last) return last;
+    else if (index<=first) return first;
+    return -1;
 }
 
 /*
@@ -2462,19 +2551,28 @@ static int scShowAllGtk(gpointer user_data){
     
     gtk_widget_show_all(photoWall); //set the new widget visibles
     
+    int clearSelection=TRUE;
+    
+    if (scSelectionPending !=NULL){
+        setSelectedFromArray(scSelectionPending);
+        g_array_free(scSelectionPending,TRUE);
+        scSelectionPending=NULL;
+        clearSelection=FALSE;
+    }
+
     if (scFocusIndexPending!=-1){
         g_print("changeFocus requested by scShowAllGtk\n");
         GArray *_array=g_array_new(FALSE, FALSE, sizeof (gint));
         g_array_append_val(_array,scFocusIndexPending);
         ScrollType _top=TOP;
         g_array_append_val(_array,_top);
-        int _true=TRUE;
-        g_array_append_val(_array,_true);
+        g_array_append_val(_array,clearSelection);
         //We run the changeFocusDelay to give robustness to refreshphotoarray function.
         //It is not good to drop and create many widgets and launch the grabfocus directly. Using a tempo gives robustness
         gdk_threads_add_timeout(50,changeFocusDelay, _array);
         scFocusIndexPending=-1;
     }
+    
     return FALSE; //to stop the looped function
 }
 

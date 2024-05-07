@@ -694,7 +694,7 @@ static int createThumbnail4Photo(const gchar *filePath, const int iDir, const gc
 }
 
 /*
-version with ffmpeg
+version with ffmpeg isn't compliant with flatpak (gnome.platform) (TODO check freedesktop.platform)
 */
 static int createThumbnail4Videoffmpeg(const gchar *filePath,const int iDir, const gchar *targetDir, const int size, const long int time){
     //we first extract an image from the video we put in a tmp dir
@@ -813,7 +813,7 @@ static GdkPixbuf *resizeImage(GdkPixbuf *input,int width, int height, int needRo
 }
 
 /*
-new version with gstreamer
+new version with gstreamer for flatpak integration
 */
 static int createThumbnail4Video(const gchar *filePath,const int iDir, const gchar *targetDir, const int size, const long int time){    
     g_print("\ncreateThumbnail4Video started\n");
