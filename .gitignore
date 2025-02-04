@@ -6,6 +6,7 @@ snap/
 pwall.app.zip
 todo.txt
 src/.vscode/
+src-test/
 .flatpak-builder/**/*
 .flatpak-builder/ccache/disabled/ccache.conf
 

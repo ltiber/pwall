@@ -28,3 +28,6 @@ extern int viewedIndex;  //index is the place of the photo/video in the CURRENT 
 extern int organizerNeed2BeRefreshed;
 extern GtkWidget *winViewer;
 extern GtkWidget *statusMessageViewer;
+extern int windowManager;
+
+enum {X11,WAYLAND};

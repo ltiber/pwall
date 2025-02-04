@@ -37,6 +37,7 @@ static gboolean btnValidateCB (GtkWidget *event_box, GdkEventButton *event, gpoi
 static void initFileChooser(gboolean chgRootDir);
 static void initProgressBar(void);
 static void savePhotosRootDirToIniFile(void);
+static void savePhotoSizeToIniFile(void);
 static void appActivated (GtkApplication *app, gpointer user_data) ; //used for menu
 static void appStarted (GtkApplication *app, gpointer user_data);
 static void appOpened (GApplication *application, GFile **files, gint n_files, const gchar *hint);
@@ -166,17 +167,49 @@ void helpCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
         char *helpFile="help.html";
     #endif
 
-    const char *helpFilePath =g_strdup_printf ("file://%s/%s", resDir, helpFile);
+    //const char *helpFilePath =g_strdup_printf ("file://%s/%s", resDir, helpFile);
+    const char *helpFilePath = "https://htmlpreview.github.io/?https://raw.githubusercontent.com/ltiber/pwall/master/res/pwall/help.html"; //compliant with firefox snap
     GError *err = NULL;
-    gtk_show_uri_on_window (GTK_WINDOW(pWindow), helpFilePath, GDK_CURRENT_TIME, &err); //compliant with flatpak
+    g_print("helpFilePath %s",helpFilePath);
+    //gtk_show_uri_on_window (GTK_WINDOW(pWindow), helpFilePath, GDK_CURRENT_TIME, &err); //compliant with flatpak
+    gtk_show_uri_on_window (NULL, helpFilePath, GDK_CURRENT_TIME, &err); //compliant with flatpak and wayland
     if (err){ 
         g_print ("-error: %s\n", err->message);
     }    
 }
+static GMenu *menuSize;
+
+static void fillMenuSize(){
+    g_menu_append (menuSize,(PHOTO_SIZE==SMALL)?"Small  \u2713":"Small","app.sizeSmall");
+    g_menu_append (menuSize,(PHOTO_SIZE==MEDIUM)?"Medium  \u2713":"Medium","app.sizeMedium");
+    g_menu_append (menuSize,(PHOTO_SIZE==LARGE)?"Large  \u2713":"Large","app.sizeLarge");
+}
+
+static void sizeCB(int value){
+    if (PHOTO_SIZE!=value){
+        g_print("change thumbail size %i\n",value);
+        g_menu_remove_all(menuSize);
+        PHOTO_SIZE=value;
+        fillMenuSize();
+        //do the job here        
+        savePhotoSizeToIniFile();
+        windowMaximizeCallBack(pWindowOrganizer,NULL,NULL);
+    }
+}
+
+static void sizeSmallCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
+    sizeCB(SMALL);
+}
+static void sizeMediumCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
+    sizeCB(MEDIUM);
+}
+static void sizeLargeCB (GSimpleAction *action, GVariant *parameter, gpointer user_data){
+    sizeCB(LARGE);
+}
 
 const GActionEntry app_actions[] = {
     {"new-window",newWindowCB},{ "refreshThumbnails", refreshThumbnailsCB },{ "chgPhotoDir", chgPhotoDirCB },{ "help", helpCB }, { "quit", quitCB }
-};
+,{ "sizeSmall", sizeSmallCB  },{ "sizeMedium", sizeMediumCB },{ "sizeLarge", sizeLargeCB }};
 
 /*
 gnome 3.34 and + support for menus , we settle it in the title menu
@@ -187,9 +220,14 @@ void initPrimaryMenu(GtkWidget *menuButton){
     menu = g_menu_new ();
     g_menu_append (menu,"New Window","app.new-window");
     g_menu_append (menu,"Refresh Thumbnails","app.refreshThumbnails");
-    g_menu_append (menu,"Change photos directory","app.chgPhotoDir");
+    g_menu_append (menu,"Change Photos Directory","app.chgPhotoDir");
     g_menu_append (menu, "Help", "app.help");
     g_menu_append (menu, "Quit", "app.quit");
+    
+    menuSize = g_menu_new ();
+    //test avec ce type de format :: g_menu_append (menuSize,"Small","app.size::small");
+    fillMenuSize();
+    g_menu_insert_submenu(menu,3,"Thumbnail Size",G_MENU_MODEL (menuSize)) ;
     popover=gtk_popover_new_from_model (menuButton, G_MENU_MODEL (menu));
     g_signal_connect (G_OBJECT (menuButton),"button-press-event",G_CALLBACK (menuButtonClickCB), NULL); //click
     g_signal_connect (G_OBJECT (menuButton),"key-press-event",G_CALLBACK (menuButtonClickCB), NULL); //click
@@ -197,8 +235,9 @@ void initPrimaryMenu(GtkWidget *menuButton){
 }
 
 static void menuButtonClickCB (GtkButton *button, gpointer data){
-    gtk_widget_show(popover); 
-    //gtk_popover_popup(GTK_POPOVER(popover)); //not supported in ubuntu 16.04
+    g_print("\nmenu clicked\n");
+    //gtk_widget_show(popover); //not supported with wayland
+    gtk_popover_popup(GTK_POPOVER(popover)); //not supported in ubuntu 16.04
 }
 /*
 The place where we create the main menu
@@ -557,6 +596,14 @@ static int processInitFile(void){
     counter++;
     g_key_file_set_integer (keyFile,"default","counter", counter);
     
+    //load PHOTO_SIZE
+    gint _PHOTO_SIZE=g_key_file_get_integer (keyFile,"default","photo_size",NULL);
+    if (_PHOTO_SIZE == 0) {
+        g_key_file_set_integer (keyFile,"default","photo_size", MEDIUM); //default
+        _PHOTO_SIZE=MEDIUM;
+    }
+    PHOTO_SIZE=_PHOTO_SIZE; //assign the global var used mainly in photoOrganizer.c
+
     g_key_file_save_to_file (keyFile,iniFilePath, NULL);   
     g_key_file_unref (keyFile);
     return TRUE; //OK
@@ -569,4 +616,13 @@ static void savePhotosRootDirToIniFile(void){
     g_key_file_set_string (keyFile,"default","photosRootDir", photosRootDir);
     g_key_file_save_to_file (keyFile,iniFilePath, NULL); 
     g_print("saved ini with photoRootDir %s",photosRootDir);
+}
+
+static void savePhotoSizeToIniFile(void){
+    GKeyFile *keyFile =g_key_file_new ();
+    char *iniFilePath =g_strdup_printf ("%s/%s", appDir, iniFileName);
+    g_key_file_load_from_file (keyFile, iniFilePath, G_KEY_FILE_KEEP_COMMENTS|G_KEY_FILE_KEEP_TRANSLATIONS, NULL);
+    g_key_file_set_integer (keyFile,"default","photo_size", PHOTO_SIZE);
+    g_key_file_save_to_file (keyFile,iniFilePath, NULL); 
+    g_print("saved ini with photo_size %i",PHOTO_SIZE);
 }

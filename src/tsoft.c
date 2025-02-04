@@ -39,7 +39,6 @@ static int thumbnailNeedsRefresh(const gchar *filePath,const int iDir, const gch
 static int _countFilesInDir(const gchar *dirPath, const gboolean extSupportedOnly, const gboolean recursive, const gboolean reset);
 
 
-
 int  getPhotoSize(const char *filePath, unsigned int *width, unsigned int *height) {
     int ret=getPhotoSizeJPG(filePath, width, height);
     if (!ret) ret=getPhotoSizePNG(filePath, width, height);
@@ -218,7 +217,8 @@ int  getPhotoSizePNG(const char *filePath, unsigned int *width, unsigned int *he
     }
     return TRUE;
 }
- /*
+
+/*
  We only handle the 3 6 8 for rotation otherwise we need symmetry
  if (j==3) dst1=gdk_pixbuf_rotate_simple(dst,GDK_PIXBUF_ROTATE_UPSIDEDOWN); //rotate 180
  if (j==6) dst1=gdk_pixbuf_rotate_simple(dst,GDK_PIXBUF_ROTATE_CLOCKWISE); //rotate 90 clockwise
@@ -474,7 +474,7 @@ int hasExifExt(const gchar *name){
 
 
 /*
-has file extension jpg jpeg png
+has file extension mp4 mpg avi mov
 */
 int hasVideoExt(const gchar *name){
     if (g_str_has_suffix(name, ".mp4") || g_str_has_suffix(name, ".MP4") ||
@@ -569,7 +569,7 @@ static int createThumbnail4Photo(const gchar *filePath, const int iDir, const gc
         targetFilePath =g_strdup_printf ("%s/%s",targetSubDir,fileName);
     }
     GdkPixbufLoader *loader=NULL;
-    int compX=-1,compY=-1,cropX=0,cropY=0;
+    int compX=-1,compY=-1,cropX=0,cropY=0; //compression and crop targets
     float ratio=1.0;
     //calculate width and height compression values
     int x=0,y=0;

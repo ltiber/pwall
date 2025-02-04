@@ -35,8 +35,10 @@ Most actions(copy, delete, share, change date...) on photos are available in pho
 #ifdef OSX
 int META_KEY = 16; //apple command key for click
 int PHOTO_SIZE = 64;
+int PHOTO_COMPRESS_SIZE = 64;
 #else
-int PHOTO_SIZE = 92;
+int PHOTO_SIZE ; //initialized in photoinit.c
+int PHOTO_COMPRESS_SIZE = MEDIUM; 
 #endif
 int MARGIN = 2;
 enum {CTRL,SHIFT};
@@ -57,7 +59,6 @@ static void setSelectedFromArray(GArray *selectedArray);
 static GArray *rowsSelected(void);
 static gboolean  keyPressCallBack(GtkWidget *widget,  GdkEventKey *event);
 static int keyPostponed(gpointer user_data);
-static void windowMaximizeCallBack(GtkWidget* widget,GParamSpec* property,gpointer data);
 static void activateFocusCB(GtkWindow *window, gpointer   user_data);
 static int whereIsTheFocus(void);
 static void focusCB(GtkWindow *window, GtkWidget *widget, gpointer   user_data);
@@ -313,7 +314,7 @@ void photoOrganizerInit(GtkWidget *waitingScreen) {
     screenHeight=getMonitorHeight(waitingScreen);
     _waitingScreen =waitingScreen;
     g_print("screen %i,%i\n",screenWidth,screenHeight);    
-    gtk_window_set_default_size(GTK_WINDOW(pWindow), screenWidth*0.8f, getAdjustedHeight(screenHeight*0.86f));
+    gtk_window_set_default_size(GTK_WINDOW(pWindow), screenWidth*0.8f, getAdjustedHeight(screenHeight*0.8f));
 
     //add 2 layers overlay to managed a status message 
     pMainOverlay = gtk_overlay_new ();
@@ -740,7 +741,7 @@ static gboolean keyPressCallBack(GtkWidget *widget,  GdkEventKey *event) {
         newFocus=whichPhotoHasTheFocus();
         if (newFocus!=-1){
             PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,newFocus); 
-            gtk_menu_popup (GTK_MENU(pMenuPopup), NULL, NULL, (GtkMenuPositionFunc)setMenuPopupPosition, GTK_WIDGET(pPhotoObj->pFocusBox), NULL, event->time);//gtk-3.18
+            gtk_menu_popup (GTK_MENU(pMenuPopup), NULL, NULL, (GtkMenuPositionFunc)setMenuPopupPosition, GTK_WIDGET(pPhotoObj->pFocusBox), 1, event->time);//NULL to 1 (main button)//gtk-3.18
             //gtk_menu_popup_at_widget  (GTK_MENU(pMenuPopup), GTK_WIDGET(pPhotoObj->pFocusBox), GDK_GRAVITY_CENTER, GDK_GRAVITY_NORTH_WEST, NULL);//3.22
         }
         break;
@@ -982,8 +983,9 @@ static int setSizeRequestMaximizedDelayed(gpointer data){
 
 /*
 window maximized/unmaximized callback
+used also when we change thumbnail size (code in photoinit.c)
 */
-static void windowMaximizeCallBack(GtkWidget* widget, GParamSpec* property,  gpointer data){
+void windowMaximizeCallBack(GtkWidget* widget, GParamSpec* property,  gpointer data){
     //g_print("%s is changed, the new value is %i\n", property->name, gtk_window_is_maximized(GTK_WINDOW(widget)));
     int isMax=gtk_window_is_maximized(GTK_WINDOW(widget));
     if (isMax){
@@ -1009,7 +1011,7 @@ static void windowMaximizeCallBack(GtkWidget* widget, GParamSpec* property,  gpo
         preferedWidth=colMax*(MARGIN+PHOTO_SIZE) + MARGIN; //on ajust nickel la prefered size
         g_print("%i images/line\n",colMax);
         gtk_widget_set_size_request(leftPanel,screenWidth*0.8f-preferedWidth,100); //the 100 has no effect, we only play on the width  
-        gtk_window_resize (GTK_WINDOW(pWindow), screenWidth*0.8f, getAdjustedHeight(screenHeight*0.86f));
+        gtk_window_resize (GTK_WINDOW(pWindow), screenWidth*0.8f, getAdjustedHeight(screenHeight*0.8f));
         scSelectionPending=getAllSelected();
         int focus=whereIsTheFocus();
         refreshPhotoArray(FALSE);
@@ -1053,6 +1055,7 @@ static int whereIsTheFocus(void){
         PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,i); 
         if (pPhotoObj!=NULL && pPhotoObj->hasFocus ) return i;
     }
+    return -1; //if not found
 }
 /*
 Set the focus to the element at index position,
@@ -1124,7 +1127,15 @@ void changeFocus(int index, ScrollType type, int clearSelection){
     }
     if (!newFocusFound){ //changeFocus has failed, reset the previous focus 
         g_print("error : new focus not found:%i -previous is%i",index, previousFocus);
-        if (previousFocus==-1) { g_print("error : previous focus can't be found");return;}
+        if (previousFocus==-1) { 
+            g_print("error : previous focus can't be found");
+            //last chance
+            int focusRow=getPhotoRow(index);
+            scroll2Row(focusRow,TOP);
+            g_print("\nlast chance : scroll2row\n");
+            focusIndexPending=index;
+            return;
+        }
         PhotoObj *pPhotoObj=g_ptr_array_index(photoArray,previousFocus); 
         pPhotoObj->hasFocus=TRUE;
         pPhotoObj->selected=TRUE;
@@ -1140,6 +1151,7 @@ void scroll2Row(int row, ScrollType type){
         int newPosition;
         if (type==TOP) newPosition=row * (PHOTO_SIZE+ MARGIN);
         if (type==BOTTOM) newPosition=row * (PHOTO_SIZE+ MARGIN)-(scPage-PHOTO_SIZE);
+        g_print("\nscroll2Row for row %i for position %i. old position is %f\n",row,newPosition, gtk_adjustment_get_value(scAdjustment));
         gtk_adjustment_set_value (scAdjustment, newPosition); 
 }
 /*
@@ -1316,10 +1328,12 @@ int getPhotoRow(int index){
     for (int i=0;i<rowArray->len;i++){
         rowObj=g_ptr_array_index(rowArray,i);
         //chg colmax par rowObj->len
-        if (rowObj->index!=-1 && rowObj->indexInPhotoArray<=index && (rowObj->len -1 + (int)rowObj->indexInPhotoArray)>=index)
+        if (rowObj->index!=-1 && rowObj->indexInPhotoArray<=index && (rowObj->len -1 + (int)rowObj->indexInPhotoArray)>=index){
+            g_print("\nphotorow for %i is %i\n",index,i);
             return i;
+        }
     }
-    g_print("error getPhotoCol index%i\n",index);
+    g_print("error getPhotoRow index%i\n",index);
     return -1; //fails should not happen
 }
 
@@ -1517,6 +1531,7 @@ void refreshPhotoArray(int _refreshTree){
     g_print ("RowArray Length %i \n",rowArray->len);
 
     scPage=gtk_adjustment_get_page_size (scAdjustment);
+    g_print("\nnew scPage= %i\n",scPage);
     scRowsInPage=ceilf(((float)scPage+MARGIN)/(PHOTO_SIZE+MARGIN)); //we add 1 margin to numerator because last row has no bottom margin
     g_print("rowsinPage%i",scRowsInPage);
     scLastPosition=-(PHOTO_SIZE+MARGIN)/2; //to refresh the photowall at the Last position
@@ -2083,14 +2098,20 @@ When UI has just finished to show the photoOrganizer window.
 We use it to start the filling of the photoWall.
 */
 static gboolean  windowMapCB (GtkWidget *widget, GdkEvent *event, gpointer data)  {
+    static gboolean run_once=TRUE;
     g_print("photo organizer ready\n");
-    focusIndexPending=0;  //postponed the grab focus-> processed by the next run of scShowAllGtk      
-    refreshPhotoArray(FALSE); //init the filling of the PhotoWall
-    int thumbnailsCounter=countFilesInDir(thumbnailDir,FALSE,TRUE);
-    if (((float)thumbnailsCounter/photosRootDirCounter)<0.25) thumbnailDialogInit(GTK_WINDOW(pWindow));//show the thumbnail dialogbox for less 25% of thumbnails of the picture directory
-    loadDirectories2Monitor();
-    startMonitor(); //start the Monitor Thread
-    gtk_widget_hide(GTK_WIDGET(data)); //hide the waiting screen
+    if (run_once){ //to avoid multiple call with wayland
+      g_print("run_once");
+      run_once=FALSE;
+      focusIndexPending=0;  //postponed the grab focus-> processed by the next run of scShowAllGtk      
+      refreshPhotoArray(FALSE); //init the filling of the PhotoWall
+      int thumbnailsCounter=countFilesInDir(thumbnailDir,FALSE,TRUE);
+      if (((float)thumbnailsCounter/photosRootDirCounter)<0.25) thumbnailDialogInit(GTK_WINDOW(pWindow));//show the thumbnail dialogbox for less 25% of thumbnails of the picture directory
+      loadDirectories2Monitor();
+      startMonitor(); //start the Monitor Thread
+      gtk_widget_hide(GTK_WIDGET(data)); //hide the waiting screen
+    }
+    return FALSE;
 }
 
 
@@ -2317,7 +2338,7 @@ Directories titles are managed. These widgets will be attached to their GTK pare
 If thumbnails need to be created, their creation are postponed to avoid grabfocus errors. 
 */
 static void scShowRows(int top){
-    g_print("scShowRows called");
+    g_print("scShowRows for %i",top);
     static int lastShowRowTop=-1;
     int error=FALSE;
     if (top==-1) {lastShowRowTop=-1;g_print("scShowRows reset top=-1\n");return;} //reset the static var
@@ -2587,9 +2608,9 @@ static void scCreateNewThumbnails(void){
         pBuffer1=NULL;
         PhotoObj *newThumbnail=g_ptr_array_index(scNewThumbnails2Create,i);
         #if defined(LINUX) || defined(WIN)
-    	int _size=PHOTO_SIZE;
+    	int _size=PHOTO_COMPRESS_SIZE;
     	#else 
-    	int _size=PHOTO_SIZE*2;
+    	int _size=PHOTO_COMPRESS_SIZE*2;
     	#endif
         int resCreate=createThumbnail(newThumbnail->fullPath,newThumbnail->iDir, thumbnailDir, _size, newThumbnail->lastModDate);
         

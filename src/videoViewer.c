@@ -1,5 +1,6 @@
 /*videoViewer.c 
 It uses GST framework to play the video
+It works with X11 windows manager
 */
 
 #include <string.h>
@@ -48,7 +49,6 @@ static gboolean  winViewer4VideoCloseCB (GtkWidget *widget, GdkEventButton *even
 static void sliderCB (GtkRange *range, gpointer data);
 static void videoWidgetRealizeCB (GtkWidget *widget, gpointer data);
 static gboolean videoWidgetDrawCB (GtkWidget *widget, cairo_t *cr, gpointer data);
-static void videoWidgetTagsCB (GstElement *playbin, gint stream, gpointer data);
 static void videoWidgetStateChangedCB (GstBus *bus, GstMessage *msg, gpointer data);
 static void videoWidgetErrorCB (GstBus *bus, GstMessage *msg, gpointer data);
 static void videoWidgetEOSCB (GstBus *bus, GstMessage *msg, gpointer data);
@@ -74,7 +74,7 @@ void disconnectWinVideoHandler(){
 }
 
 /*
-used to show or hide the slider
+Handles clicks on the videos
 */
 static gboolean  winViewer4VideoClickCB (GtkWidget *widget, GdkEventButton *event, gpointer data)  {
     //common callback to video and photo
@@ -91,10 +91,7 @@ static gboolean  winViewer4VideoClickCB (GtkWidget *widget, GdkEventButton *even
             return TRUE;
         }
     }
-
-    /*show, hide
-    if (!gtk_widget_is_visible(video->slider)) gtk_widget_show(video->slider);
-    else gtk_widget_hide(video->slider);*/
+    //pause/restart
     if (video->state==GST_STATE_PAUSED) {
       g_print("paused");
       if (endOfVideo) { 
@@ -109,7 +106,7 @@ static gboolean  winViewer4VideoClickCB (GtkWidget *widget, GdkEventButton *even
 }
 
 /*
-check movement of the pointer
+Check movement of the pointer
 */
 static gboolean  winViewer4VideoMoveCB (GtkWidget *widget, GdkEventButton *event, gpointer data)  {
     g_print("\nwinViewer4VideoMoveCB\n");
@@ -130,7 +127,7 @@ static gboolean  winViewer4VideoCloseCB (GtkWidget *widget, GdkEventButton *even
 
 
 /*
-used to pause, play
+Handles Keydowns in the video
 */
 static gboolean winViewer4VideoKeyCB(GtkWidget *widget,  GdkEventKey *event, gpointer data) {
     //common callback to video and photo
@@ -244,14 +241,6 @@ int videoWidgetLoad(int index){
     GstStateChangeReturn ret;
     // fill the VideoObj //
     video->duration = GST_CLOCK_TIME_NONE;
-
-    // Create the elements //
-    //video->playbin = gst_element_factory_make ("playbin", "playbin");
-    //pipeline = gst_parse_launch ("playbin uri=https://www.freedesktop.org/software/gstreamer-sdk/data/media/sintel_trailer-480p.webm", NULL);
-    //gchar *cmd="filesrc location=/media/leon/HDD/Pictures/GoPro/720p/test_960.mp4 ! qtdemux name=demux  demux.audio_0 ! queue ! decodebin ! audioconvert ! audioresample ! autoaudiosink    demux.video_0 ! queue ! decodebin ! videoflip method=clockwise ! videoconvert ! autovideosink";
-    //OK gchar *cmd="videotestsrc ! videoconvert ! autovideosink";
-    //OK gchar *cmd="playbin uri=\"file:///media/leon/HDD/Pictures/2012-10 Violaine/20121025_114520.mp4\"";
-    //OK gchar *cmd="filesrc location=\"/media/leon/HDD/Pictures/2012-10 Violaine/20121025_114520.mp4\" ! decodebin ! clockoverlay font-desc=\"Sans, 48\" ! videoconvert ! autovideosink";
   
     // Set the URI to play // 
     FileObj *fileObj=g_ptr_array_index(viewedFileSet,index); //get the file
@@ -289,11 +278,6 @@ int videoWidgetLoad(int index){
         g_printerr ("Not all elements could be created.\n");
         return FALSE;
     }
-
-    // Connect to interesting signals in playbin //
-    //g_signal_connect (G_OBJECT (video->playbin), "video-tags-changed", (GCallback) videoWidgetTagsCB, NULL);
-    //g_signal_connect (G_OBJECT (video->playbin), "audio-tags-changed", (GCallback) videoWidgetTagsCB, NULL);
-    //g_signal_connect (G_OBJECT (video->playbin), "text-tags-changed", (GCallback) videoWidgetTagsCB, NULL);
 
     // Instruct the bus to emit signals for each received message, and connect to the interesting signals //
     GstBus *bus = gst_element_get_bus (video->playbin);
@@ -339,13 +323,12 @@ void videoWidgetClose(){
     }
     g_free(video); video=NULL;   
 
-    //g_usleep(1000000); //no effect on suspend/restore bug
 }
 
 
-/* This function is called when the GUI toolkit creates the physical window that will hold the video.
- * At this point we can retrieve its handler (which has a different meaning depending on the windowing system)
- * and pass it to GStreamer through the VideoOverlay interface. */
+/* This function is called when the GUI toolkit creates the physical gtk window that will hold the video.
+ * At this point we can retrieve its window handler 
+ * We will use it to attach it to GStreamer Overlay interface in the bussynchandler*/
 static void videoWidgetRealizeCB (GtkWidget *widget, gpointer data) {
     g_print("\nrealized\n");
     GdkWindow *window = gtk_widget_get_window (widget);
@@ -353,19 +336,12 @@ static void videoWidgetRealizeCB (GtkWidget *widget, gpointer data) {
     g_error ("Couldn't create native window needed for GstVideoOverlay!");
 
   /* Retrieve window handler from GDK */
-  video_window_handle = GDK_WINDOW_XID (window);
-  
-  /*will do gst_video_overlay_set_window_handle to put the video in the correct window*/
-  /*GstBus *bus = gst_element_get_bus (video->playbin);    
-  gst_bus_set_sync_handler (bus, (GstBusSyncHandler) bus_sync_handler, NULL, NULL);  
-  gst_object_unref (bus);*/
-
-  /* Pass it to playbin, which implements VideoOverlay and will forward it to the video sink */
-  // we do it via bus_sync_handler to troubleshhot the sleep and wakeup
-  //it can work with the playbin but not the parse launcher and it's better to run the bus_sync_handler
-  //gst_video_overlay_set_window_handle (GST_VIDEO_OVERLAY (video->playbin), video_window_handle);
+    video_window_handle = GDK_WINDOW_XID (window); 
 }
 
+/*
+*We attach the gtk window to the GStreamer Overlay interface
+*/
 static GstBusSyncReply bus_sync_handler (GstBus * bus, GstMessage * message, gpointer user_data){
   // ignore anything but 'prepare-window-handle' element messages
   if (!gst_is_video_overlay_prepare_window_handle_message (message))
@@ -485,12 +461,6 @@ static gboolean refreshSlider (LongIntObj *userdata) {
     return TRUE;
 }
 
-/* This function is called when new metadata is discovered in the stream */
-static void videoWidgetTagsCB (GstElement *playbin, gint stream, gpointer data) {
-  /* We are possibly in a GStreamer working thread, so we notify the main
-   * thread of this event through a message in the bus */
-  gst_element_post_message (playbin, gst_message_new_application (GST_OBJECT (playbin), gst_structure_new_empty ("tags-changed")));
-}
 
 /* This function is called when an error message is posted on the bus */
 static void videoWidgetErrorCB (GstBus *bus, GstMessage *msg, gpointer data) {
@@ -520,7 +490,6 @@ static void videoWidgetEOSCB (GstBus *bus, GstMessage *msg, gpointer data) {
  * keep track of the current state. */
 static void videoWidgetStateChangedCB (GstBus *bus, GstMessage *msg, gpointer data) {
   GstState old_state, new_state, pending_state;
-  g_print("videoWidgetStateChangedCB\n");
   gst_message_parse_state_changed (msg, &old_state, &new_state, &pending_state);
   if (GST_MESSAGE_SRC (msg) == GST_OBJECT (video->playbin)) {
     video->state = new_state;

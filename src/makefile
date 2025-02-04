@@ -1,5 +1,6 @@
 make:
-	gcc -D LINUX  -o ../bin/pwall fileSystemMonitor.c thumbnail.c tsoft.c photoInit.c photoDialogs.c photoOrganizer.c multiViewer.c photoViewer.c videoViewer.c -I. -g -lm `pkg-config --libs --cflags gstreamer-video-1.0 gtk+-3.0 gstreamer-1.0 gstreamer-pbutils-1.0`
+	gcc -D LINUX  -o ../bin/pwall fileSystemMonitor.c thumbnail.c tsoft.c photoInit.c photoDialogs.c photoOrganizer.c multiViewer.c photoViewer.c videoViewer.c videoViewerWayland.c -I. -g -lm `pkg-config --libs --cflags gstreamer-video-1.0 gtk+-3.0 gstreamer-1.0 gstreamer-pbutils-1.0  gstreamer-wayland-1.0`
+	# gcc -D LINUX  -o ../bin/pwall fileSystemMonitor.c thumbnail.c tsoft.c photoInit.c photoDialogs.c photoOrganizer.c multiViewer.c photoViewer.c videoViewer.c -I. -g -lm `pkg-config --libs --cflags gstreamer-video-1.0 gtk+-3.0 gstreamer-1.0 gstreamer-pbutils-1.0`
 	# gcc -D OSX  -o ../bin/pwall thumbnail.c tsoft.c photoInit.c photoDialogs.c photoOrganizer.c photoViewer.c -I. -g -lm `pkg-config --libs --cflags gtk+-3.0`	
 	# even if we have deprecated function gcc compile. -w means no warning are output
 	# we have warnings because we want to be compliant with ubuntu 16.04 and 18.04

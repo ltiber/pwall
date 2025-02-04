@@ -7,11 +7,14 @@ You can navigate directly to the next or the previous photo of the current dir b
 #include <stdlib.h>
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
+#include <gdk/gdkx.h>
+#include <gdk/gdkwayland.h>
 #include <tsoft.h>
 #include <photoOrganizer.h>
 #include <multiViewer.h>
 #include <photoViewer.h>
 #include <videoViewer.h>
+#include <videoViewerWayland.h>
 #include <photoDialogs.h>
 #include <photoInit.h>
 
@@ -44,6 +47,7 @@ int viewedIndex;  //this index is the place of the photo/video in the CURRENT FO
 int organizerNeed2BeRefreshed=FALSE; //to call refreshArray when we destroy the viewer
 GtkWidget *winViewer;
 GtkWidget *statusMessageViewer;
+int windowManager=-1;
 
 
 void multiViewerInit(GtkWindow *parent, int index, int monitor){
@@ -59,6 +63,13 @@ void multiViewerInit(GtkWindow *parent, int index, int monitor){
     g_signal_connect(G_OBJECT(winViewer),"map-event",G_CALLBACK(windowMapCallBack), NULL);
     
     GdkDisplay *display = gdk_display_get_default ();
+    if (GDK_IS_WAYLAND_DISPLAY (display)){
+      g_print("Is Wayland\n");
+      windowManager=WAYLAND;
+} else if (GDK_IS_X11_DISPLAY (display)){
+      g_print("Is X11\n");
+      windowManager=X11;
+}
     GdkScreen *screen = gdk_display_get_default_screen (display);
     
     #ifdef OSX
@@ -103,14 +114,22 @@ void multiViewerWidgetInit(int index){
     if (hasPhotoExt(fileObj->name)) viewerType=PHOTO;
     else if (hasVideoExt(fileObj->name)) viewerType=VIDEO;
     if (viewerType == PHOTO) {
-        gtk_window_fullscreen(GTK_WINDOW(winViewer)); // reset to fullscreen 
+        //gtk_window_fullscreen(GTK_WINDOW(winViewer)); // reset to fullscreen 
         photoWidgetInit(); //create widgets/containers hierarchy in the winViewer to show a photo and display errors 
         if (winViewerReady) connectWinPhotoHandler(); //issue double click, we dont connect if winviewer is not realized
     } else if (viewerType == VIDEO) {
-        gtk_window_unfullscreen(GTK_WINDOW(winViewer));//workaround to a video capture bug when PC sleep 
-        gtk_window_maximize (GTK_WINDOW(winViewer));// reset to maximize 
-        videoWidgetInit(); //create widgets/containers hierarchy in the winViewer to show a photo and display errors 
-        if (winViewerReady) connectWinVideoHandler(); //issue double click
+        //comment the reset to fullscreen for ubuntu 24.04   
+        //gtk_window_unfullscreen(GTK_WINDOW(winViewer));//workaround to a video capture bug when PC sleep 
+        //gtk_window_maximize (GTK_WINDOW(winViewer));// reset to maximize
+        if (windowManager==X11){
+          videoWidgetInit(); //create widgets/containers hierarchy in the winViewer to show a video and display errors 
+          if (winViewerReady) connectWinVideoHandler(); //issue double click
+        }
+        if (windowManager==WAYLAND){
+          videoWidgetInitW(); //create widgets/containers hierarchy in the winViewer to show a video and display errors 
+          if (winViewerReady) connectWinVideoHandlerW(); //issue double click
+        }
+
     }
 }
 
@@ -119,8 +138,13 @@ int multiViewerWidgetLoad(int index){
     FileObj *fileObj=g_ptr_array_index(viewedFileSet,index);
     if (viewerType == PHOTO){
         ret=photoWidgetLoad(index);     //add the image to display 
-    } else if (viewerType == VIDEO){
-        ret=videoWidgetLoad(index);
+    } else if (viewerType == VIDEO){        
+        if (windowManager==X11){
+          ret=videoWidgetLoad(index);
+        }
+        if (windowManager==WAYLAND){
+          ret=videoWidgetLoadW(index);
+        }
     }
     return ret;
 }
@@ -129,8 +153,14 @@ void multiViewerWidgetDestroy(){
      if (viewerType == PHOTO){
          disconnectWinPhotoHandler();
      } else  if (viewerType == VIDEO){
-         videoWidgetClose();
-         disconnectWinVideoHandler();
+          if (windowManager==X11){
+            videoWidgetClose();
+            disconnectWinVideoHandler();
+          }
+          if (windowManager==WAYLAND){
+            videoWidgetCloseW();
+            disconnectWinVideoHandlerW();
+          }         
      }
     removeAllWidgets(GTK_CONTAINER(winViewer)); //we clean the content of the window
 }
@@ -321,9 +351,14 @@ static gboolean  windowMapCallBack (GtkWidget *widget, GdkEvent *event, gpointer
 
     if (viewerType==PHOTO) {
         // we set this event handler after the initialisation to avoid conflict with the double click in the main window
-        connectWinPhotoHandler(winViewer);
+        connectWinPhotoHandler();
     } else if (viewerType==VIDEO){
-        connectWinVideoHandler(winViewer);
+        if (windowManager==X11){  
+          connectWinVideoHandler(); 
+        }
+        if (windowManager==WAYLAND){ 
+          connectWinVideoHandlerW();
+        }
     }
 }
 
@@ -347,7 +382,7 @@ gboolean multiViewerKeyCB(GtkWidget *widget,  GdkEventKey *event){
     static gint64 lastTime=0;
     static gint lastKeyVal=0;
     static gint repeatKeyStepMin=250; //in ms
-    gint64 now=g_get_monotonic_time () / 1000;// clock from 1970 in ms
+    gint64 now=g_get_monotonic_time () / 1000;// clock from 1970 in mstodo
     if (lastKeyVal!=event->keyval){
         lastKeyVal=event->keyval;
         lastTime=now; 
@@ -361,9 +396,9 @@ gboolean multiViewerKeyCB(GtkWidget *widget,  GdkEventKey *event){
     int newSelection=-1;    
     int res=-1;
     int ret=-1;
-    
-    gtk_widget_hide(statusMessageViewer); //reset the message status before action
 
+    gtk_widget_hide(statusMessageViewer); //reset the message status before action
+    
     switch (event->keyval) {
     case GDK_KEY_Up:
     case GDK_KEY_Left:

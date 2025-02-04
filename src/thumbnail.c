@@ -246,9 +246,9 @@ static void *heavyWork(void *pointer){
     state = RUNNING;
     //g_print("just before thumbnails creating");
     #if defined(LINUX) || defined(WIN)
-    int _size=PHOTO_SIZE;
+    int _size=PHOTO_COMPRESS_SIZE;
     #else 
-    int _size=PHOTO_SIZE*2;
+    int _size=PHOTO_COMPRESS_SIZE*2;
     #endif
     const char *photos2process;
 

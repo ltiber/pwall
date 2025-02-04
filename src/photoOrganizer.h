@@ -68,7 +68,8 @@ int getPreviousDir(int *row);
 void addCounters2Tree(GtkTreeIter *parent);
 int getPhotoIndex(int col, int row);
 int getPhotoCol(int index);
-int getPhotoRow(int index); 
+int getPhotoRow(int index);
+void windowMaximizeCallBack(GtkWidget* widget,GParamSpec* property,gpointer data); 
 
 
 
@@ -95,5 +96,9 @@ extern int scRowsInPage;
 
 //public constants
 extern int PHOTO_SIZE;
+extern int PHOTO_COMPRESS_SIZE;
 extern int MARGIN;
+
+//public enum for photo_size
+enum {SMALL=64,MEDIUM=92,LARGE=112};
 
