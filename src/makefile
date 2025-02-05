@@ -21,7 +21,7 @@ installosx:
 release:
     #check version number in deb/DEBIAN/control and in make file
     #if you've changed resources like  png or help copy them in the deb dir
-	dpkg -b ../deb/ ../release/pwall-2.2-0.deb
+	dpkg -b ../deb/ ../release/pwall-2.3-0.deb
   
   
   
@@ -48,6 +48,11 @@ release:
 	# git memo PAT Personal access Token doivent être utilisé quand on se signe en ligne de commande https://github.com/settings/tokens
 	# sudo apt-get install ffmpeg 
     # ajout dependance avec ffmpeg et gstreamer libgstreamer1.0-0 et autres plugins
+
+	#git config --global user.email "leon.tiberghien@gmail.com"
+	#git config --global user.name "ltiber"
+
+
     
 
 

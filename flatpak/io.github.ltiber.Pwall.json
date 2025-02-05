@@ -1,7 +1,7 @@
 {
     "app-id":"io.github.ltiber.Pwall",
     "runtime":"org.freedesktop.Platform",
-    "runtime-version":"22.08",
+    "runtime-version":"24.08",
     "sdk":"org.freedesktop.Sdk",
     "command":"pwall",
     "finish-args":[
@@ -46,7 +46,7 @@
                 {
                     "type":"git",
                     "url":"https://github.com/ltiber/pwall.git",
-                    "tag":"2.2-0"
+                    "tag":"2.3-0"
                 }
             ]
         }
