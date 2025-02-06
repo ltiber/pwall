@@ -622,6 +622,10 @@ static int createThumbnail4Photo(const gchar *filePath, const int iDir, const gc
             if  (bytes_read==0) break;
             gdk_pixbuf_loader_write (loader, buffer, bytes_read, &error);
             bytes_read_total+=bytes_read;
+            if (error) {
+                g_print("\nerror in the pixbuf_loader intercepted\n");
+                break;
+            }
         }
         //g_print("totalbytesread %i",bytes_read_total);
         src=gdk_pixbuf_loader_get_pixbuf (loader);
