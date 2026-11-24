@@ -68,6 +68,11 @@ like smartphones do.</p>
   </provides>
 
   <releases>
+      <release version="2.3-1" date="2026-11-23">
+      <description>
+        <p>runtime 25.08 for flatpak, video thumbnail in batch reactivate, on the fly thumbnails creation optimized</p>
+      </description>
+    </release>
     <release version="2.3-0" date="2025-02-05">
       <description>
         <p>Wayland support for videos, runtime 24.08 for flatpak, change thumbnails size</p>

@@ -65,7 +65,7 @@ static void focusCB(GtkWindow *window, GtkWidget *widget, gpointer   user_data);
 static gboolean  windowMapCB (GtkWidget *widget, GdkEvent *event, gpointer data) ;
 static void windowDestroyCB(GtkWidget *pWidget, gpointer pData);
 static void insertPhotoWithImage(GtkWidget *image, int col, int row, int iDir, char *fullPath, long int time);
-static void updatePhotoWithImage(GtkWidget *image, int col, int row);
+static int updatePhotoWithImage(GtkWidget *image, int col, int row);
 static GtkWidget *loadThumbnail(const char *fullPathFile, int iDir);
 static int getNextRow(int index);
 static int getPreviousRow(int index);
@@ -120,6 +120,8 @@ static int scShowMessageDate(gpointer user_data);
 static int scHideMessageWait(gpointer user_data);
 static int scUpdateNewThumbnailInGtk(gpointer user_data);
 static int scRefreshPhotoWall(gpointer user_data);
+static int scCheckRowStillVisible(int row);
+static void scRemoveUselessRows(int fromRow);
 //searching the treeview functions
 static void searchNodes(const char *searchingText, GtkTreeIter *parent);
 static void searchNext(void);
@@ -239,12 +241,13 @@ void photoOrganizerInit(GtkWidget *waitingScreen) {
     
     GtkCssProvider *provider = gtk_css_provider_new ();
     gtk_style_context_add_provider_for_screen (screen, GTK_STYLE_PROVIDER (provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION); 
-
+    //to have theme colors we can use @theme_selected_bg_color in place of rgba(236,129,86,1)
+    //we mix the color to have it softer
     gchar *CSS="\
     .focusBox{\
       border-style: solid;\
       border-width:4px;\
-      border-color:rgba(236,129,86,1);\
+      border-color: mix(@theme_selected_bg_color, #ffffff, 0.20);\
       border-radius:0px;\
     }\
     .focusBoxOSX{\
@@ -594,14 +597,24 @@ static void insertPhotoWithImage(GtkWidget *image, int col, int row, int iDir, c
 /*
 If the thumbnails is not ready we postpone the insertion of the image in the photowall.
 We update it later with this function
+return FALSE if error
 */
-static void updatePhotoWithImage(GtkWidget *image, int col, int row){
+static int updatePhotoWithImage(GtkWidget *image, int col, int row){
     int index=getPhotoIndex(col, row);
     if  (index!=-1){ 
         PhotoObj *photoObj=g_ptr_array_index(photoArray,index);
-        g_print("updatePhotoWithImage %i %i %i %p\n",col, row, index, photoObj);
-        gtk_container_add (GTK_CONTAINER (photoObj->pEventBox), image);
-    } else g_print("error in updating the photo (col %i,row %i)",col,row);
+        if (photoObj!=NULL){
+            g_print("updatePhotoWithImage %i %i %i %p\n",col, row, index, photoObj);
+            gtk_container_add (GTK_CONTAINER (photoObj->pEventBox), image);
+        } else {
+           g_print("error in updating the photo because photoObj is NULL(col %i,row %i)",col,row); 
+           return FALSE;
+        }
+    } else {
+        g_print("error in updating the photo (col %i,row %i)",col,row);
+        return FALSE;
+    }
+    return TRUE;
 }
 
 /*
@@ -2302,16 +2315,17 @@ static void scThreadStart(void *pointer){
         }
         //test range >46 to minimize the number of check
         if (abs(position-scLastPosition)>=((PHOTO_SIZE+MARGIN)/2) && !scWait){ //changes occured 46 is the row size/2
-            if (scCheckMove(position)){ //check if it is a temporary, progressive or final scroll position
+            //We disable this test for better reactivity of the scroll
+            //if (scCheckMove(position)){ //check if it is a temporary, progressive or final scroll position
                 g_print("calcul rows to check,%i,%i\n",scLastPosition,position);
                 topRow = position/(PHOTO_SIZE + MARGIN);
                 scShowRows(topRow); //load and show the needed thumbnails
                 scLastPosition=position;  //set last value
                 j++;
-            }
+            //}
         }
         
-        G_UNLOCK(scMutex); //we lock the scrolling thread
+        G_UNLOCK(scMutex); //we unlock the scrolling thread
         
         i++;
         if (i==1000000) i=0; //reinit after au dela du milion pour éviter les overflow
@@ -2325,6 +2339,7 @@ static void scThreadStart(void *pointer){
 
 /*
 Check if it scrolling behaviour is pending or completed.
+We don't use it any more. It slows down to much the scrolling!!!
 */
 static int scCheckMove(int position){
     g_usleep(25000); //wait 25ms to see if the position is final or a progression 
@@ -2444,7 +2459,7 @@ static int insertImagesInRow(int row,int idNode,int index,int hasMore){
                 newThumbnail->iDir=idNode;
                 newThumbnail->lastModDate=fileObj->time;
                 newThumbnail->fullPath=g_strdup_printf("%s/%s",fullPath,fileObj->name);
-                //other fields are useless for this process
+                //other fields are useless for this processpImage
                 g_ptr_array_add (scNewThumbnails2Create, newThumbnail);
             }
             col++;
@@ -2480,11 +2495,13 @@ Runs in the gtk thread.
 */
 static int scShowAllGtk(gpointer user_data){
     g_print("scShowAllGtk called\n");
+    static int count=0; //counter of function call
     //add image to rows
     int row=-1;
     int col=-1;
     int lastRowIndex=-1;
     if (scWaitingImages->len==0) g_print("no image in waiting images!\n");
+    int rowStillVisible=FALSE;
     for (int i=0;i<scWaitingImages->len;i++){
         GtkWidget *pImage=g_ptr_array_index(scWaitingImages,i);    
         IntObj *_row=g_object_get_data (G_OBJECT(pImage), "row");
@@ -2494,15 +2511,25 @@ static int scShowAllGtk(gpointer user_data){
         LongIntObj *_time=g_object_get_data (G_OBJECT(pImage), "time");
         int time=_time->value;
         char *fullPath=g_object_get_data (G_OBJECT(pImage), "fullPath");
-        if (row!=lastRowIndex) {
-            col=0;lastRowIndex=row;g_print("insert images in gtk for row %i\n" ,row);
+        if (row!=lastRowIndex) { 
+            col=0;lastRowIndex=row;
             RowObj *rowObj=g_ptr_array_index(rowArray,row);
-            rowObj->loaded=TRUE;
+            if (scCheckRowStillVisible(row)) {   //optimisation
+                rowStillVisible=TRUE;
+                rowObj->loaded=TRUE;
+                g_print("insert images in gtk for row %i\n" ,row);
+            } else {
+                rowStillVisible=FALSE;
+                rowObj->loaded=FALSE;
+            }
         } else col++;
         IntObj *_nullImage=g_object_get_data (G_OBJECT(pImage), "nullImage");
         if (_nullImage->value) {//g_free(pImage);
                                 pImage=NULL;}
-        insertPhotoWithImage(pImage, col, row, iDir, fullPath, time);
+        if (rowStillVisible)  
+            insertPhotoWithImage(pImage, col, row, iDir, fullPath, time);
+        else
+            gtk_widget_destroy(pImage);    
     }
     //clean scWaitingImages
     if (scWaitingImages->len>0){
@@ -2527,49 +2554,10 @@ static int scShowAllGtk(gpointer user_data){
         g_array_free(scWaitingLabels, TRUE);
         scWaitingLabels = g_array_new (FALSE, FALSE, sizeof (gint));
     }
-    
-    //clean the photoArray and the photoWall
-    int rowKeepFirst, rowKeepLast;//max 5 pages we don't care about limits. it's only for a test 
-    rowKeepFirst=lastRowIndex-scRowsInPage*2.5;
-    rowKeepLast=lastRowIndex+scRowsInPage*2.5;
-    g_print("lastRowIndex %i\n",lastRowIndex);
-    if (lastRowIndex!=-1){
-        int k=0, w=-1;
-        int focusRow=whichRowHasTheFocus();
-        int focusRowPending=getPhotoRow(scFocusIndexPending);
-        /*Exclude selection rows from cleaning*/
-        GArray *_rowsSelected=rowsSelected();    
-        while (TRUE){
-            if (k > (photoArray->len-1) || photoArray->len == 0 ) break;
-            PhotoObj *pPhotoObj=g_ptr_array_index(photoArray, k);
-            //exclude focusRow and rows where we can find a selection
-            //for focusRow we also exclude a range of 2up and 2 down to don't break with key up and down features 
-            if (pPhotoObj!=NULL && (pPhotoObj->row < rowKeepFirst || pPhotoObj->row > rowKeepLast) && ( pPhotoObj->row < focusRow-2 || pPhotoObj->row > focusRow+2 ) && pPhotoObj->row!=focusRowPending && !isInIntegerArray(_rowsSelected,pPhotoObj->row) ){
-                if (w!=pPhotoObj->row) g_print("clean row%i-",pPhotoObj->row);
-                w=pPhotoObj->row;
-                if (GTK_IS_WIDGET(pPhotoObj->pEventBox)){
-                    GtkWidget *pOverlay=gtk_widget_get_parent(pPhotoObj->pEventBox);
-                    removeAllWidgets(GTK_CONTAINER(pOverlay)); //remove the children of the overlay 
-                    gtk_widget_destroy(pOverlay); //remove le container itself
-                    if (pPhotoObj->col==0) { //unload the rowArray (only once by row, the first col) 
-                        RowObj *rowObj=g_ptr_array_index(rowArray,pPhotoObj->row); 
-                        rowObj->loaded=FALSE;
-                    }
-                }else{
-                    //troubleshooting
-                    g_print("error with eventBox k=%i\n",k);
-                    g_print("photoarray len %i", photoArray->len);
-                    break; 
-                }
-                //we don't remove the element from the photoArray but we free it and set it to NULL
-                g_free(pPhotoObj);
-                photoArray->pdata[k]=NULL;
-                //TODO remove Labels dir et no photo???
-            } else k++;
-        }
-        g_array_free(_rowsSelected,TRUE);
-    }
-    
+    if (count%10==0)   //to optimize we do this cleaning every 10 times
+        scRemoveUselessRows(lastRowIndex);  //we remove thumbnails that are not in the view port of the scroll 
+
+
     gtk_widget_show_all(photoWall); //set the new widget visibles
     
     int clearSelection=TRUE;
@@ -2594,6 +2582,8 @@ static int scShowAllGtk(gpointer user_data){
         scFocusIndexPending=-1;
     }
     
+    count++;
+    if (count==1000000) count=0; //to avoid overload
     return FALSE; //to stop the looped function
 }
 
@@ -2662,12 +2652,17 @@ static int scUpdateNewThumbnailInGtk(gpointer user_data){
             int row=_row->value;
             IntObj *_col=g_object_get_data (G_OBJECT(pImage), "col");
             int col=_col->value;
-            updatePhotoWithImage(pImage, col, row);
+            int updated=updatePhotoWithImage(pImage, col, row);
             if (row!=lastRowIndex) { //update loaded
                 lastRowIndex=row;
-                RowObj *rowObj=g_ptr_array_index(rowArray,row);
-                rowObj->loaded=TRUE;
             }
+            RowObj *rowObj=g_ptr_array_index(rowArray,row);            
+            if (updated)
+                rowObj->loaded=TRUE;
+             else {
+                gtk_widget_destroy(pImage);
+                rowObj->loaded=FALSE; //a ver
+             }         
             //not working if (i%10==0) {gtk_widget_show_all(photoWall); while (gtk_events_pending ()) gtk_main_iteration(); } ////consume all the events before getting the focus 
     }
     //show the updates
@@ -2797,6 +2792,66 @@ static void scCleanArrays(void){
         g_ptr_array_set_free_func(scWaitingNewThumbnails,(GDestroyNotify)gtk_widget_destroy);
         g_ptr_array_free (scWaitingNewThumbnails,TRUE); //don't remove the elements otherwise the previous pImage will freed and can't be used by gtk
         scWaitingNewThumbnails = g_ptr_array_new_with_free_func (NULL);
+    }
+
+
+}
+
+/*
+To optimize the delayed loading of rows we check if it is still visible so eligable to load 
+*/
+static int scCheckRowStillVisible(int row){
+    int margin = 5; // we keep a top and bottom few rows
+    int position = gtk_adjustment_get_value (scAdjustment);
+    int topRow = position/(PHOTO_SIZE + MARGIN);
+    int bottomRow=topRow+scRowsInPage;// -1 + 1; (-1 because index start at 0 and +1 when half a thumbnail on top and bottom of the wall) = 0
+    if (!(row>=(topRow-margin) && row<=(bottomRow+margin))) g_print("\nscCheckRowStillVisible pour row %i à FALSE",row);
+    return (row>=(topRow-margin) && row<=(bottomRow+margin))?TRUE:FALSE;
+}
+
+//We remove gtk component which are no more usefull, not visible and not selected
+//from the last row updated
+static void scRemoveUselessRows(int fromRow){
+    //clean the photoArray and the photoWall
+    int rowKeepFirst, rowKeepLast;//max 5 pages we don't care about limits. it's only for a test 
+    rowKeepFirst=fromRow-scRowsInPage*2.5;
+    rowKeepLast=fromRow+scRowsInPage*2.5;
+    g_print("remove useless components from row %i\n",fromRow);
+    if (fromRow!=-1){
+        int k=0, w=-1;
+        int focusRow=whichRowHasTheFocus();
+        int focusRowPending=getPhotoRow(scFocusIndexPending);
+        /*Exclude selection rows from cleaning*/
+        GArray *_rowsSelected=rowsSelected();    
+        while (TRUE){
+            if (k > (photoArray->len-1) || photoArray->len == 0 ) break;
+            PhotoObj *pPhotoObj=g_ptr_array_index(photoArray, k);
+            //exclude focusRow and rows where we can find a selection
+            //for focusRow we also exclude a range of 2up and 2 down to don't break with key up and down features 
+            if (pPhotoObj!=NULL && (pPhotoObj->row < rowKeepFirst || pPhotoObj->row > rowKeepLast) && ( pPhotoObj->row < focusRow-2 || pPhotoObj->row > focusRow+2 ) && pPhotoObj->row!=focusRowPending && !isInIntegerArray(_rowsSelected,pPhotoObj->row) ){
+                if (w!=pPhotoObj->row) g_print("clean row%i-",pPhotoObj->row);
+                w=pPhotoObj->row;
+                if (GTK_IS_WIDGET(pPhotoObj->pEventBox)){
+                    GtkWidget *pOverlay=gtk_widget_get_parent(pPhotoObj->pEventBox);
+                    removeAllWidgets(GTK_CONTAINER(pOverlay)); //remove the children of the overlay 
+                    gtk_widget_destroy(pOverlay); //remove le container itself
+                    if (pPhotoObj->col==0) { //unload the rowArray (only once by row, the first col) 
+                        RowObj *rowObj=g_ptr_array_index(rowArray,pPhotoObj->row); 
+                        rowObj->loaded=FALSE;
+                    }
+                }else{
+                    //troubleshooting
+                    g_print("error with eventBox k=%i\n",k);
+                    g_print("photoarray len %i", photoArray->len);
+                    break; 
+                }
+                //we don't remove the element from the photoArray but we free it and set it to NULL
+                g_free(pPhotoObj);
+                photoArray->pdata[k]=NULL;
+                //TODO remove Labels dir et no photo???
+            } else k++;
+        }
+        g_array_free(_rowsSelected,TRUE);
     }
 
 

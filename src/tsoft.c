@@ -427,8 +427,10 @@ static int createThumbnail4DirInternal(const gchar *dirPath,const gchar *targetD
         } else { //if not needed if (pFileEntry->d_type==DT_REG || pFileEntry->d_type==DT_LNK)
             //g_print("isFile\n");
             //workaround temporary we exclude video because of a memory leak in gstreamer usage
-            //if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name) || hasVideoExt(pFileEntry -> d_name)) ) {
-            if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name)) ) {
+            //finalement avec nouvelle version gstreamer, ça a l'air de fonctionner
+            //on remet comme avant en traitant les videos et les photos
+            //if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name)) ) {
+            if (!isHiddenFile(pFileEntry -> d_name) && (hasPhotoExt(pFileEntry -> d_name) || hasVideoExt(pFileEntry -> d_name)) ) {
                 //g_print("isJPEG\n");
                 counter++;
                 gchar *filePath =g_strdup_printf ("%s/%s",dirPath,fileName);
@@ -614,7 +616,7 @@ static int createThumbnail4Photo(const gchar *filePath, const int iDir, const gc
         error=NULL;
         GFileInputStream *input_stream = g_file_read (_file, NULL, &error);
         loader=gdk_pixbuf_loader_new();
-        gdk_pixbuf_loader_set_size(loader,compX, compY); 
+        gdk_pixbuf_loader_set_size(loader,compX, compY);
         guchar *buffer = g_new0 (guchar, 65535);
 	    goffset bytes_read, bytes_read_total = 0;
         while (TRUE) {
@@ -627,11 +629,11 @@ static int createThumbnail4Photo(const gchar *filePath, const int iDir, const gc
                 break;
             }
         }
-        //g_print("totalbytesread %i",bytes_read_total);
+        if (error) g_print ("-error: %s\n", error->message);
+        //g_print("\ntotalbytesread %i",bytes_read_total);
         src=gdk_pixbuf_loader_get_pixbuf (loader);
-        if (src==NULL || error){
-            g_print ("-error: %s\n", error->message);
-            g_clear_error(&error);
+        if (src==NULL){
+            g_print("\nerror with gdk_pixbuf_loader_get_pixbuf");
             g_free(fileName);
             if (removeExt) g_free(_fileName);
             g_free(targetSubDir);
@@ -641,8 +643,8 @@ static int createThumbnail4Photo(const gchar *filePath, const int iDir, const gc
             g_free (buffer);
             g_object_unref (G_OBJECT (input_stream));
             return ERR_PIXBUF;
-        }
-        g_free (buffer);
+        }          
+        g_free (buffer); 
         g_object_unref (G_OBJECT (input_stream));
     }
     if (verbose) {
